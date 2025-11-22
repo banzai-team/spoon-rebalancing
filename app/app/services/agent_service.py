@@ -5,7 +5,7 @@ import os
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from portfolio_rebalancer_agent import PortfolioRebalancerAgent
+from app.agents.portfolio_rebalancer_agent import PortfolioRebalancerAgent
 from spoon_ai.chat import ChatBot
 from app.db.models import Wallet, Strategy, Recommendation, ChatMessageDB
 
@@ -41,7 +41,6 @@ class AgentService:
                 "success": True,
                 "status": {
                     "mode": agent.mode,
-                    "threshold_percent": agent.threshold_percent,
                     "min_profit_threshold_usd": agent.min_profit_threshold_usd,
                     "target_allocation": agent.target_allocation,
                     "max_steps": agent.max_steps
@@ -58,7 +57,7 @@ class AgentService:
             raise HTTPException(status_code=500, detail=f"Ошибка при получении статуса: {str(e)}")
     
     @staticmethod
-    def configure_agent(mode: Optional[str] = None, threshold_percent: Optional[float] = None, 
+    def configure_agent(mode: Optional[str] = None, 
                        min_profit_threshold_usd: Optional[float] = None) -> dict:
         """Настроить параметры агента"""
         try:
@@ -66,8 +65,6 @@ class AgentService:
             
             if mode:
                 agent.set_mode(mode)
-            if threshold_percent is not None:
-                agent.set_threshold(threshold_percent)
             if min_profit_threshold_usd is not None:
                 agent.set_min_profit(min_profit_threshold_usd)
             
@@ -75,7 +72,6 @@ class AgentService:
                 "success": True,
                 "config": {
                     "mode": agent.mode,
-                    "threshold_percent": agent.threshold_percent,
                     "min_profit_threshold_usd": agent.min_profit_threshold_usd
                 }
             }

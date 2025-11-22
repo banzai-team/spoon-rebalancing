@@ -8,7 +8,7 @@ from spoon_ai.agents.toolcall import ToolCallAgent
 from spoon_ai.chat import ChatBot
 from spoon_ai.tools.crypto_tools import get_crypto_tools
 from spoon_ai.tools import ToolManager
-from portfolio_rebalancer_tools import (
+from app.tools.portfolio_rebalancer_tools import (
     GetTokenPricesTool,
     CalculateRebalancingTool,
     EstimateGasFeesTool,
@@ -22,42 +22,42 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     description: str = "AI агент для мониторинга и ребалансировки криптопортфеля на основе рыночных условий и допустимого уровня риска"
 
     system_prompt: str = """
-    Ты - профессиональный AI-агент для ребалансировки криптопортфеля.
+    You are a professional AI agent for cryptocurrency portfolio rebalancing.
     
-    ТВОЯ ГЛАВНАЯ ЗАДАЧА: Помочь пользователю поддерживать оптимальное распределение активов в криптопортфеле.
+    YOUR MAIN TASK: Help the user maintain optimal asset allocation in their cryptocurrency portfolio.
     
-    ДОСТУПНЫЕ ФУНКЦИИ:
-    1. get_portfolio_balance - Получить текущие балансы портфеля из кошельков
-    2. get_token_prices - Получить текущие цены токенов в USD
-    3. calculate_rebalancing - Рассчитать необходимые действия для ребалансировки
-    4. estimate_gas_fees - Оценить комиссии за газ для транзакций
-    5. suggest_rebalancing_trades - Предложить конкретные сделки с учетом комиссий
+    AVAILABLE FUNCTIONS:
+    1. get_portfolio_balance - Get current portfolio balances from wallets
+    2. get_token_prices - Get current token prices in USD
+    3. calculate_rebalancing - Calculate necessary actions for rebalancing
+    4. estimate_gas_fees - Estimate gas fees for transactions
+    5. suggest_rebalancing_trades - Suggest specific trades considering fees
     
-    ПРОЦЕСС РАБОТЫ:
-    1. Получи текущие балансы портфеля (get_portfolio_balance)
-    2. Получи текущие цены токенов (get_token_prices)
-    3. Рассчитай текущее распределение в процентах
-    4. Сравни с целевым распределением и рассчитай отклонения (calculate_rebalancing)
-    5. Оцени комиссии за газ (estimate_gas_fees)
-    6. Предложи конкретные сделки, если выгода превышает издержки (suggest_rebalancing_trades)
+    WORKFLOW:
+    1. Get current portfolio balances (get_portfolio_balance)
+    2. Get current token prices (get_token_prices)
+    3. Calculate current allocation percentages
+    4. Compare with target allocation and calculate deviations (calculate_rebalancing)
+    5. Estimate gas fees (estimate_gas_fees)
+    6. Suggest specific trades if benefits exceed costs (suggest_rebalancing_trades)
     
-    ВАЖНЫЕ ПРАВИЛА:
-    - Всегда проверяй, что ожидаемая выгода от ребалансировки превышает комиссии за газ
-    - Предлагай ребалансировку только если отклонение от целевого распределения превышает порог (обычно 5%)
-    - Предоставляй четкие рекомендации с конкретными суммами в USD
-    - Учитывай комиссии за газ при расчете целесообразности ребалансировки
-    - Если пользователь запрашивает только анализ (консультация), не предлагай автоматическое выполнение
-    - Если пользователь запрашивает автономный режим, предложи конкретные транзакции для выполнения
+    IMPORTANT RULES:
+    - Always verify that expected rebalancing benefits exceed gas fees
+    - Suggest rebalancing only if deviation from target allocation exceeds threshold (usually 5%)
+    - Provide clear recommendations with specific amounts in USD
+    - Consider gas fees when calculating rebalancing feasibility
+    - If user requests only analysis (consultation mode), don't suggest automatic execution
+    - If user requests autonomous mode, suggest specific transactions for execution
     
-    ФОРМАТ ОТВЕТА:
-    - Начинай с краткого резюме текущего состояния портфеля
-    - Покажи текущее и целевое распределение в процентах
-    - Укажи отклонения и необходимость ребалансировки
-    - Если ребалансировка нужна, покажи предложенные сделки с суммами
-    - Укажи общую стоимость газа и ожидаемую выгоду
-    - Заверши четкой рекомендацией
+    RESPONSE FORMAT:
+    - Start with a brief summary of current portfolio status
+    - Show current and target allocation percentages
+    - Indicate deviations and rebalancing necessity
+    - If rebalancing is needed, show suggested trades with amounts
+    - Indicate total gas cost and expected benefit
+    - End with a clear recommendation
     
-    Всегда отвечай на русском языке, если пользователь общается на русском.
+    Always respond in the same language the user is using.
     """
 
     available_tools: ToolManager = ToolManager([
@@ -73,7 +73,6 @@ class PortfolioRebalancerAgent(ToolCallAgent):
         self.max_steps = 10
         self.mode: str = "consultation"  # "consultation" или "autonomous"
         self.target_allocation: Optional[Dict[str, float]] = None
-        self.threshold_percent: float = 5.0
         self.min_profit_threshold_usd: float = 50.0
 
     def set_mode(self, mode: str):
@@ -86,10 +85,6 @@ class PortfolioRebalancerAgent(ToolCallAgent):
         """Устанавливает целевое распределение портфеля"""
         self.target_allocation = allocation
 
-    def set_threshold(self, threshold: float):
-        """Устанавливает порог отклонения в процентах"""
-        self.threshold_percent = threshold
-
     def set_min_profit(self, min_profit: float):
         """Устанавливает минимальную прибыль для выполнения ребалансировки"""
         self.min_profit_threshold_usd = min_profit
@@ -97,12 +92,12 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     async def analyze_portfolio(self, wallets: list, tokens: list, chain: str = "ethereum") -> Dict[str, Any]:
         """Анализирует текущее состояние портфеля"""
         prompt = f"""
-        Проанализируй текущее состояние портфеля:
-        - Кошельки: {', '.join(wallets)}
-        - Токены: {', '.join(tokens)}
-        - Сеть: {chain}
+        Analyze the current portfolio status:
+        - Wallets: {', '.join(wallets)}
+        - Tokens: {', '.join(tokens)}
+        - Chain: {chain}
         
-        Получи балансы и цены, затем предоставь краткий анализ текущего распределения.
+        Get balances and prices, then provide a brief analysis of current allocation.
         """
         response = await self.run(prompt)
         return {"analysis": response}
@@ -115,25 +110,24 @@ class PortfolioRebalancerAgent(ToolCallAgent):
             target_allocation = self.target_allocation or {}
         
         if not target_allocation:
-            return {"error": "Целевое распределение не установлено"}
+            return {"error": "Target allocation is not set"}
         
         prompt = f"""
-        Проверь необходимость ребалансировки портфеля:
-        - Кошельки: {', '.join(wallets)}
-        - Токены: {', '.join(tokens)}
-        - Сеть: {chain}
-        - Целевое распределение: {json.dumps(target_allocation, ensure_ascii=False)}
-        - Порог отклонения: {self.threshold_percent}%
-        - Минимальная прибыль: ${self.min_profit_threshold_usd}
+        Check if portfolio rebalancing is needed:
+        - Wallets: {', '.join(wallets)}
+        - Tokens: {', '.join(tokens)}
+        - Chain: {chain}
+        - Target allocation: {json.dumps(target_allocation, ensure_ascii=False)}
+        - Minimum profit threshold: ${self.min_profit_threshold_usd}
         
-        Выполни полный анализ:
-        1. Получи текущие балансы портфеля
-        2. Получи текущие цены токенов
-        3. Рассчитай отклонения от целевого распределения
-        4. Оцени комиссии за газ
-        5. Предложи конкретные сделки, если ребалансировка целесообразна
+        Perform full analysis:
+        1. Get current portfolio balances
+        2. Get current token prices
+        3. Calculate deviations from target allocation
+        4. Estimate gas fees
+        5. Suggest specific trades if rebalancing is beneficial
         
-        Режим работы: {self.mode}
+        Work mode: {self.mode}
         """
         
         response = await self.run(prompt)
@@ -145,7 +139,7 @@ class PortfolioRebalancerAgent(ToolCallAgent):
                                   auto_execute: bool = False) -> Dict[str, Any]:
         """Выполняет ребалансировку портфеля"""
         if self.mode == "consultation" and auto_execute:
-            return {"error": "Автоматическое выполнение недоступно в режиме консультации"}
+            return {"error": "Automatic execution is not available in consultation mode"}
         
         result = await self.check_rebalancing(wallets, tokens, target_allocation, chain)
         
@@ -174,7 +168,6 @@ async def main():
         "ETH": 35.0,
         "USDC": 25.0
     })
-    agent.set_threshold(5.0)  # Порог 5%
     agent.set_min_profit(50.0)  # Минимальная прибыль $50
     
     print("🤖 Агент ребалансировки портфеля готов к работе!\n")

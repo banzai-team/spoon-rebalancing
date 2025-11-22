@@ -29,7 +29,6 @@ async def configure_agent(
     """Настроить параметры агента"""
     return AgentService.configure_agent(
         mode=request.mode,
-        threshold_percent=request.threshold_percent,
         min_profit_threshold_usd=request.min_profit_threshold_usd
     )
 

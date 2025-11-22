@@ -25,6 +25,7 @@ class User(Base):
     strategies = relationship("Strategy", back_populates="user", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="user", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessageDB", back_populates="user", cascade="all, delete-orphan")
+    token_balances = relationship("WalletTokenBalance", back_populates="user", cascade="all, delete-orphan")
 
 
 class Wallet(Base):
@@ -43,6 +44,7 @@ class Wallet(Base):
     # Связи
     user = relationship("User", back_populates="wallets")
     strategies = relationship("StrategyWallet", back_populates="wallet", cascade="all, delete-orphan")
+    token_balances = relationship("WalletTokenBalance", back_populates="wallet", cascade="all, delete-orphan")
 
 
 class Strategy(Base):
@@ -53,9 +55,6 @@ class Strategy(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    target_allocation = Column(JSON, nullable=True)  # {"BTC": 40.0, "ETH": 35.0, ...}
-    threshold_percent = Column(Float, nullable=False, default=5.0)
-    min_profit_threshold_usd = Column(Float, nullable=False, default=50.0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -110,4 +109,23 @@ class ChatMessageDB(Base):
     # Связи
     user = relationship("User", back_populates="chat_messages")
     strategy = relationship("Strategy", foreign_keys=[strategy_id])
+
+
+class WalletTokenBalance(Base):
+    """Модель баланса токенов в кошельке"""
+    __tablename__ = "wallet_token_balances"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    wallet_id = Column(UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    token_symbol = Column(String(50), nullable=False)  # BTC, ETH, USDC и т.д.
+    balance = Column(String(255), nullable=False)  # Баланс в виде строки (для точности больших чисел)
+    balance_usd = Column(Float, nullable=True)  # Баланс в USD
+    chain = Column(String(50), nullable=False)  # Блокчейн
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Связи
+    wallet = relationship("Wallet", back_populates="token_balances")
+    user = relationship("User", back_populates="token_balances")
 

@@ -16,7 +16,7 @@ class StrategyService:
     @staticmethod
     async def parse_strategy_description(description: str) -> Dict[str, float]:
         """Парсит текстовое описание стратегии в целевое распределение"""
-        from portfolio_rebalancer_agent import PortfolioRebalancerAgent
+        from app.agents.portfolio_rebalancer_agent import PortfolioRebalancerAgent
         from spoon_ai.chat import ChatBot
         import os
         
@@ -28,17 +28,17 @@ class StrategyService:
         )
         
         prompt = f"""
-        Пользователь описал желаемое распределение портфеля следующим образом:
+        The user described their desired portfolio allocation as follows:
         "{description}"
         
-        Извлеки из этого описания целевое распределение в процентах для каждого токена.
-        Верни результат в формате JSON, где ключи - это символы токенов (BTC, ETH, USDC и т.д.),
-        а значения - проценты (числа от 0 до 100).
+        Extract the target allocation percentages for each token from this description.
+        Return the result in JSON format, where keys are token symbols (BTC, ETH, USDC, etc.),
+        and values are percentages (numbers from 0 to 100).
         
-        Пример ответа:
+        Example response:
         {{"BTC": 40.0, "ETH": 35.0, "USDC": 25.0}}
         
-        Верни только JSON, без дополнительных комментариев.
+        Return only JSON, without additional comments.
         """
         
         response = await agent.run(prompt)
@@ -76,10 +76,7 @@ class StrategyService:
                 id=str(s.id),
                 name=s.name,
                 description=s.description,
-                target_allocation=s.target_allocation,
                 wallet_ids=wallet_ids,
-                threshold_percent=s.threshold_percent,
-                min_profit_threshold_usd=s.min_profit_threshold_usd,
                 created_at=s.created_at.isoformat(),
                 updated_at=s.updated_at.isoformat()
             ))
@@ -108,10 +105,7 @@ class StrategyService:
             id=str(strategy.id),
             name=strategy.name,
             description=strategy.description,
-            target_allocation=strategy.target_allocation,
             wallet_ids=wallet_ids,
-            threshold_percent=strategy.threshold_percent,
-            min_profit_threshold_usd=strategy.min_profit_threshold_usd,
             created_at=strategy.created_at.isoformat(),
             updated_at=strategy.updated_at.isoformat()
         )
@@ -138,17 +132,11 @@ class StrategyService:
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Неверный формат ID кошелька: {wallet_id}")
         
-        # Парсим описание стратегии
-        target_allocation = await StrategyService.parse_strategy_description(strategy.description)
-        
         # Создаем стратегию
         db_strategy = Strategy(
             user_id=user_id,
             name=strategy.name,
             description=strategy.description,
-            target_allocation=target_allocation,
-            threshold_percent=strategy.threshold_percent,
-            min_profit_threshold_usd=strategy.min_profit_threshold_usd
         )
         db.add(db_strategy)
         db.commit()
@@ -164,10 +152,7 @@ class StrategyService:
             id=str(db_strategy.id),
             name=db_strategy.name,
             description=db_strategy.description,
-            target_allocation=db_strategy.target_allocation,
             wallet_ids=strategy.wallet_ids,
-            threshold_percent=db_strategy.threshold_percent,
-            min_profit_threshold_usd=db_strategy.min_profit_threshold_usd,
             created_at=db_strategy.created_at.isoformat(),
             updated_at=db_strategy.updated_at.isoformat()
         )
@@ -197,8 +182,6 @@ class StrategyService:
             strategy.name = strategy_update.name
         if strategy_update.description is not None:
             strategy.description = strategy_update.description
-            # Перепарсиваем описание
-            strategy.target_allocation = await StrategyService.parse_strategy_description(strategy_update.description)
         if strategy_update.wallet_ids is not None:
             # Удаляем старые связи
             db.query(StrategyWallet).filter(StrategyWallet.strategy_id == strategy.id).delete()
@@ -220,10 +203,6 @@ class StrategyService:
             for wallet_uuid in wallet_uuids:
                 link = StrategyWallet(strategy_id=strategy.id, wallet_id=wallet_uuid)
                 db.add(link)
-        if strategy_update.threshold_percent is not None:
-            strategy.threshold_percent = strategy_update.threshold_percent
-        if strategy_update.min_profit_threshold_usd is not None:
-            strategy.min_profit_threshold_usd = strategy_update.min_profit_threshold_usd
         
         db.commit()
         db.refresh(strategy)
@@ -235,10 +214,7 @@ class StrategyService:
             id=str(strategy.id),
             name=strategy.name,
             description=strategy.description,
-            target_allocation=strategy.target_allocation,
             wallet_ids=wallet_ids,
-            threshold_percent=strategy.threshold_percent,
-            min_profit_threshold_usd=strategy.min_profit_threshold_usd,
             created_at=strategy.created_at.isoformat(),
             updated_at=strategy.updated_at.isoformat()
         )

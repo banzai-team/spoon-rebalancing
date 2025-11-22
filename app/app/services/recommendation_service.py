@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.db.models import Recommendation, Strategy, StrategyWallet, Wallet
 from app.api.schemas import RecommendationRequest, RecommendationResponse
+from app.services.strategy_service import StrategyService
 
 
 class RecommendationService:
@@ -34,12 +35,6 @@ class RecommendationService:
         if not strategy:
             raise HTTPException(status_code=404, detail="Стратегия не найдена")
         
-        if not strategy.target_allocation:
-            raise HTTPException(
-                status_code=400,
-                detail="Целевое распределение не установлено. Используйте /api/strategies/{id}/parse для парсинга описания."
-            )
-        
         # Получаем кошельки стратегии
         wallet_links = db.query(StrategyWallet).filter(StrategyWallet.strategy_id == strategy.id).all()
         wallet_ids = [sw.wallet_id for sw in wallet_links]
@@ -63,14 +58,16 @@ class RecommendationService:
         
         # Настраиваем агента
         agent = get_agent_func()
-        agent.set_threshold(strategy.threshold_percent)
         agent.set_min_profit(strategy.min_profit_threshold_usd)
+        
+        # Парсим описание стратегии для получения целевого распределения
+        target_allocation = await StrategyService.parse_strategy_description(strategy.description)
         
         # Получаем рекомендацию
         result = await agent.check_rebalancing(
             wallets=wallet_addresses,
             tokens=list(tokens) if tokens else ["BTC", "ETH", "USDC"],
-            target_allocation=strategy.target_allocation,
+            target_allocation=target_allocation,
             chain=chain or "ethereum"
         )
         

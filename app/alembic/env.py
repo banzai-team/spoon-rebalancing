@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.db import Base, get_database_url
 # Import all models to ensure they are registered with Base
-from app.db.models import User, Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB
+from app.db.models import User, Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB, WalletTokenBalance
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

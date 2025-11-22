@@ -1,9 +1,10 @@
 """
 Роуты для работы с чатом
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 import uuid
+from typing import Optional
 
 from app.db import get_db, get_user_id
 from app.api.schemas import ChatMessage, ChatResponse, ChatHistoryResponse
@@ -25,10 +26,22 @@ async def chat_with_agent(
 
 @router.get("/history", response_model=ChatHistoryResponse)
 async def get_chat_history(
-    limit: int = 50,
+    strategy_id: Optional[str] = Query(None, description="Фильтр по ID стратегии"),
+    limit: int = Query(50, description="Максимальное количество сообщений"),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_user_id)
 ):
     """Получить историю чата пользователя"""
-    return ChatService.get_chat_history(db, user_id, limit)
+    return ChatService.get_chat_history(db, user_id, limit, strategy_id)
+
+
+@router.get("/new-messages", response_model=ChatHistoryResponse)
+async def get_new_messages(
+    strategy_id: Optional[str] = Query(None, description="ID стратегии"),
+    after_message_id: Optional[str] = Query(None, description="Получить сообщения после этого ID"),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_user_id)
+):
+    """Получить новые сообщения в чате (для polling)"""
+    return ChatService.get_new_messages(db, user_id, strategy_id, after_message_id)
 

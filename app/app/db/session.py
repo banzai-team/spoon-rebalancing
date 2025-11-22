@@ -36,13 +36,16 @@ def get_session_local():
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-# Создаем SessionLocal
-SessionLocal = get_session_local()
+# SessionLocal будет создан лениво при первом использовании
+_SessionLocal = None
 
 
 def get_db():
     """Dependency для получения сессии БД"""
-    db = SessionLocal()
+    global _SessionLocal
+    if _SessionLocal is None:
+        _SessionLocal = get_session_local()
+    db = _SessionLocal()
     try:
         yield db
     finally:
