@@ -1,7 +1,7 @@
 """Remove target_allocation and threshold_percent columns
 
-Revision ID: remove_target_allocation_threshold
-Revises: 42a2f391f505
+Revision ID: 0003_remove_cols_strategy
+Revises: 0002_add_token_balances_table
 Create Date: 2025-11-22 20:00:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '81223512a850'
-down_revision: Union[str, None] = '42a2f391f505'
+revision: str = '0003_remove_cols_strategy'
+down_revision: Union[str, None] = '0002_add_token_balances_table'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

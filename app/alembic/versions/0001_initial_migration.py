@@ -1,6 +1,6 @@
 """Initial migration with users and user_id support
 
-Revision ID: 7fbc40bbe4c3
+Revision ID: 0001_initial
 Revises: 
 Create Date: 2025-11-22 18:16:15.619701
 
@@ -14,7 +14,7 @@ import uuid
 
 
 # revision identifiers, used by Alembic.
-revision: str = '7fbc40bbe4c3'
+revision: str = '0001_initial_migration'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

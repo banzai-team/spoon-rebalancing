@@ -1,7 +1,7 @@
 """Add wallet_token_balances table
 
-Revision ID: 42a2f391f505
-Revises: 7fbc40bbe4c3
+Revision ID: 0002_add_token_balances_table
+Revises: 0001_initial_migration
 Create Date: 2025-11-22 19:40:36.669469
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '42a2f391f505'
-down_revision: Union[str, None] = '7fbc40bbe4c3'
+revision: str = '0002_add_token_balances_table'
+down_revision: Union[str, None] = '0001_initial_migration'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

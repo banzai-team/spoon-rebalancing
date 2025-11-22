@@ -1,7 +1,7 @@
 """Add index on strategy_id in chat_messages
 
-Revision ID: add_chat_strategy_index
-Revises: 81223512a850
+Revision ID: 0004_add_chat_messages_idx
+Revises: 0003_remove_cols_strategy
 Create Date: 2025-11-22 21:00:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'add_chat_strategy_index'
-down_revision: Union[str, None] = '81223512a850'
+revision: str = '0004_add_chat_messages_idx'
+down_revision: Union[str, None] = '0003_remove_cols_strategy'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
