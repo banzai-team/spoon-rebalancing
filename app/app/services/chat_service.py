@@ -71,22 +71,22 @@ class ChatService:
         response = await agent.run(prompt)
         
         # Сохраняем в БД
-        db_chat = ChatMessageDB(
-            user_id=user_id,
-            user_message=message.message,
-            agent_response=response,
-            strategy_id=strategy_uuid,
-            wallet_ids=[uuid.UUID(wid) for wid in (message.wallet_ids or []) if wid]
-        )
-        db.add(db_chat)
-        db.commit()
-        db.refresh(db_chat)
+        # db_chat = ChatMessageDB(
+        #     user_id=user_id,
+        #     user_message=message.message,
+        #     agent_response=response,
+        #     strategy_id=strategy_uuid,
+        #     wallet_ids=[uuid.UUID(wid) for wid in (message.wallet_ids or []) if wid]
+        # )
+        # db.add(db_chat)
+        # db.commit()
+        # db.refresh(db_chat)
         
         return ChatResponse(
-            message_id=str(db_chat.id),
-            user_message=db_chat.user_message,
-            agent_response=db_chat.agent_response,
-            timestamp=db_chat.created_at.isoformat()
+            message_id=str("1"),
+            user_message=message.message,
+            agent_response=response,
+            timestamp="2025-11-22T12:00:00Z"
         )
     
     @staticmethod

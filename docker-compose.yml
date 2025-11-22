@@ -28,9 +28,9 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: portfolio_rebalancer
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-portfolio_rebalancer}
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,12 +49,14 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: portfolio_rebalancer
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-portfolio_rebalancer}
       LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
       LLM_MODEL: ${LLM_MODEL:-x-ai/grok-4.1-fast:free}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      BITQUERY_CLIENT_SECRET: ${BITQUERY_CLIENT_SECRET:-}
+      BITQUERY_CLIENT_ID: ${BITQUERY_CLIENT_ID:-}
       PORT: 8000
       HOST: 0.0.0.0
     ports:
