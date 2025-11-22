@@ -187,14 +187,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = [
-    "database",
-    "db_dependency",
-    "example_api_usage",
-    "init_db",
-    "portfolio_config",
-    "portfolio_rebalancer_agent",
-    "portfolio_rebalancer_api",
-    "portfolio_rebalancer_tools",
-]
+packages = ["app"]
+
+[tool.setuptools.package-data]
+"*" = ["cookbook/**/*"]
 

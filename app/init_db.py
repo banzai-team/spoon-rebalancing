@@ -3,7 +3,7 @@
 """
 import os
 import sys
-from database import get_database_url
+from app.db import get_database_url
 from alembic.config import Config
 from alembic import command
 

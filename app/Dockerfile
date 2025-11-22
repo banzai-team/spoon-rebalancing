@@ -12,17 +12,18 @@ RUN apt-get update && apt-get install -y \
 # Установка uv
 RUN pip install uv
 
-# Копирование pyproject.toml и установка зависимостей
-# Делаем это отдельно для лучшего кеширования Docker слоев
+# Копирование pyproject.toml
 COPY pyproject.toml .
-RUN uv pip install --system .
 
-# Копирование кода приложения
+# Копирование всего кода приложения
 COPY . .
+
+# Установка зависимостей и пакета
+RUN uv pip install --system .
 
 # Открываем порт
 EXPOSE 8000
 
 # Команда по умолчанию
-CMD ["python", "portfolio_rebalancer_api.py"]
+CMD ["python", "run.py"]
 

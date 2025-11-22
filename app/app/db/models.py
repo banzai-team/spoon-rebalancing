@@ -1,15 +1,13 @@
 """
 Модели базы данных для Portfolio Rebalancer
 """
-from sqlalchemy import create_engine, Column, String, Float, DateTime, Text, JSON, ForeignKey, Integer
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import Column, String, Float, DateTime, Text, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 import uuid
-import os
 
-Base = declarative_base()
+from app.db.base import Base
 
 
 class User(Base):
@@ -112,46 +110,4 @@ class ChatMessageDB(Base):
     # Связи
     user = relationship("User", back_populates="chat_messages")
     strategy = relationship("Strategy", foreign_keys=[strategy_id])
-
-
-# Настройка подключения к БД
-def get_database_url():
-    """Получает URL подключения к БД из переменных окружения"""
-    db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD", "postgres")
-    db_host = os.getenv("DB_HOST", "localhost")
-    db_port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "portfolio_rebalancer")
-    
-    return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-
-
-def get_engine():
-    """Создает engine для подключения к БД"""
-    database_url = get_database_url()
-    return create_engine(database_url, echo=os.getenv("DB_ECHO", "False").lower() == "true")
-
-
-def get_session_local():
-    """Создает SessionLocal для работы с БД"""
-    engine = get_engine()
-    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def init_db():
-    """
-    Инициализирует БД, создавая все таблицы и создавая пользователя 1.
-    
-    ВНИМАНИЕ: Эта функция использует create_all для обратной совместимости.
-    Для production рекомендуется использовать миграции Alembic через init_db.py
-    """
-
-    print("✅ База данных инициализирована")
-
-
-def drop_db():
-    """Удаляет все таблицы из БД"""
-    engine = get_engine()
-    Base.metadata.drop_all(bind=engine)
-    print("✅ Все таблицы удалены")
 

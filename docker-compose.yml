@@ -68,7 +68,7 @@ services:
       - portfolio_network
     volumes:
       - ./app:/app
-    command: uvicorn portfolio_rebalancer_api:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   postgres_data:

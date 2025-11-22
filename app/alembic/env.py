@@ -8,12 +8,12 @@ from alembic import context
 # Import our database models and Base
 import sys
 import os
-# Add parent directory to path to import database module
+# Add parent directory to path to import app module
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from database import Base, get_database_url
+from app.db import Base, get_database_url
 # Import all models to ensure they are registered with Base
-from database import User, Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB
+from app.db.models import User, Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
