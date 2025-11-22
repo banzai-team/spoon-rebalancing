@@ -22,7 +22,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ./app
       dockerfile: Dockerfile
     container_name: portfolio_rebalancer_api
     environment:
@@ -44,7 +44,7 @@ services:
     networks:
       - portfolio_network
     volumes:
-      - .:/app
+      - ./app:/app
     command: python portfolio_rebalancer_api.py
 
 volumes:
