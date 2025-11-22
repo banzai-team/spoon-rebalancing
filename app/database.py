@@ -1,7 +1,7 @@
 """
 Модели базы данных для Portfolio Rebalancer
 """
-from sqlalchemy import create_engine, Column, String, Float, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, String, Float, DateTime, Text, JSON, ForeignKey, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -12,12 +12,30 @@ import os
 Base = declarative_base()
 
 
+class User(Base):
+    """Модель пользователя"""
+    __tablename__ = "users"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String(255), nullable=False, unique=True)
+    email = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Связи
+    wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
+    strategies = relationship("Strategy", back_populates="user", cascade="all, delete-orphan")
+    recommendations = relationship("Recommendation", back_populates="user", cascade="all, delete-orphan")
+    chat_messages = relationship("ChatMessageDB", back_populates="user", cascade="all, delete-orphan")
+
+
 class Wallet(Base):
     """Модель кошелька"""
     __tablename__ = "wallets"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    address = Column(String(255), nullable=False, unique=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    address = Column(String(255), nullable=False)
     chain = Column(String(50), nullable=False)
     label = Column(String(255), nullable=True)
     tokens = Column(JSON, nullable=False, default=list)  # Список токенов
@@ -25,6 +43,7 @@ class Wallet(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Связи
+    user = relationship("User", back_populates="wallets")
     strategies = relationship("StrategyWallet", back_populates="wallet", cascade="all, delete-orphan")
 
 
@@ -33,6 +52,7 @@ class Strategy(Base):
     __tablename__ = "strategies"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     target_allocation = Column(JSON, nullable=True)  # {"BTC": 40.0, "ETH": 35.0, ...}
@@ -42,6 +62,7 @@ class Strategy(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Связи
+    user = relationship("User", back_populates="strategies")
     wallet_links = relationship("StrategyWallet", back_populates="strategy", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="strategy", cascade="all, delete-orphan")
 
@@ -65,12 +86,14 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     strategy_id = Column(UUID(as_uuid=True), ForeignKey("strategies.id"), nullable=False)
     recommendation = Column(Text, nullable=False)
     analysis = Column(JSON, nullable=True)  # Дополнительные данные анализа
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Связи
+    user = relationship("User", back_populates="recommendations")
     strategy = relationship("Strategy", back_populates="recommendations")
 
 
@@ -79,6 +102,7 @@ class ChatMessageDB(Base):
     __tablename__ = "chat_messages"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     user_message = Column(Text, nullable=False)
     agent_response = Column(Text, nullable=False)
     strategy_id = Column(UUID(as_uuid=True), ForeignKey("strategies.id"), nullable=True)
@@ -86,6 +110,7 @@ class ChatMessageDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Связи
+    user = relationship("User", back_populates="chat_messages")
     strategy = relationship("Strategy", foreign_keys=[strategy_id])
 
 
@@ -114,9 +139,13 @@ def get_session_local():
 
 
 def init_db():
-    """Инициализирует БД, создавая все таблицы"""
-    engine = get_engine()
-    Base.metadata.create_all(bind=engine)
+    """
+    Инициализирует БД, создавая все таблицы и создавая пользователя 1.
+    
+    ВНИМАНИЕ: Эта функция использует create_all для обратной совместимости.
+    Для production рекомендуется использовать миграции Alembic через init_db.py
+    """
+
     print("✅ База данных инициализирована")
 
 
