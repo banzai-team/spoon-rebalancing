@@ -2,8 +2,18 @@
 
 ## Шаг 1: Установка зависимостей
 
+Установите `uv` (если еще не установлен):
 ```bash
-pip install -r requirements.txt
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Или через pip
+pip install uv
+```
+
+Установите зависимости проекта:
+```bash
+uv pip install -e .
 ```
 
 ## Шаг 2: Настройка API ключа

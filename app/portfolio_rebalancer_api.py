@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from app.agent import PortfolioRebalancerAgent
+from portfolio_rebalancer_agent import PortfolioRebalancerAgent
 from spoon_ai.chat import ChatBot
-from app.database import Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB, init_db
-from app.db_dependency import get_db
+from database import Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB, init_db
+from db_dependency import get_db
 import uvicorn
 import os
 import json
