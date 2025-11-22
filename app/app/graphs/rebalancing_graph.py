@@ -23,6 +23,7 @@ from app.tools.rebalancer_tools import (
 from app.tools.chainbase_tools import GetAccountTokensTool, GetAccountBalanceTool
 from spoon_ai.tools.crypto_tools import get_crypto_tools
 from spoon_toolkits.crypto.crypto_data_tools.price_data import GetTokenPriceTool
+from app.utils.helpers import convert_hex_balance_to_float
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class RebalancingState(TypedDict, total=False):
     chain_id: int  # ID блокчейна (1 = Ethereum, 137 = Polygon, 42161 = Arbitrum)
     target_allocation: Dict[str, float]  # Целевое распределение в процентах
     threshold_percent: float  # Порог отклонения для ребалансировки (по умолчанию 5%)
+    risk_tolerance: str  # Уровень риска (low, medium, high)
     min_profit_threshold_usd: float  # Минимальная прибыль для выполнения ребалансировки
     
     # Промежуточные данные
@@ -109,8 +111,22 @@ async def fetch_portfolio_balances(
             if "error" not in tokens_result and "data" in tokens_result:
                 for token_data in tokens_result.get("data", []):
                     symbol = token_data.get("symbol", "").upper()
-                    balance = float(token_data.get("balance", 0) or 0)
+                    
+                    # Получаем decimals (по умолчанию 18 для большинства токенов)
+                    decimals = token_data.get("decimals", 18)
+                    
+                    # Конвертируем баланс из hex строки в число
+                    raw_balance = token_data.get("balance", 0)
+                    balance = convert_hex_balance_to_float(raw_balance, decimals)
+                    
+                    # Получаем баланс в USD (если есть)
                     balance_usd = float(token_data.get("balance_usd", 0) or 0)
+                    
+                    # Если balance_usd не указан, но есть current_usd_price, вычисляем
+                    if balance_usd == 0 and balance > 0:
+                        current_price = float(token_data.get("current_usd_price", 0) or 0)
+                        if current_price > 0:
+                            balance_usd = balance * current_price
                     
                     if symbol and balance > 0:
                         if symbol not in total_balances_usd:
@@ -121,7 +137,9 @@ async def fetch_portfolio_balances(
                             token_balances[wallet_address] = {}
                         token_balances[wallet_address][symbol] = {
                             "balance": balance,
-                            "balance_usd": balance_usd
+                            "balance_usd": balance_usd,
+                            "decimals": decimals,
+                            "raw_balance": raw_balance
                         }
             
             # Обрабатываем нативный баланс

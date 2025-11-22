@@ -18,17 +18,6 @@ from app.tools.rebalancer_tools import (
 )
 from app.tools.chainbase_tools import GetAccountTokensTool, GetAccountBalanceTool
 
-class CryptoAnalysisState(TypedDict, total=False):
-    user_query: str
-    selected_tokens: List[str]
-    token_details: Dict[str, Any]
-    token_balances: Dict[str, float]
-    token_prices: Dict[str, float]
-    allocation_deviation: Dict[str, float]
-    rebalancing_actions: Dict[str, Any]
-    gas_fees: Dict[str, Any]
-    rebalancing_summary: str
-    execution_log: List[str]
 
 class PortfolioRebalancerAgent(ToolCallAgent):
     """AI-агент для автоматической ребалансировки криптопортфеля"""
@@ -38,8 +27,27 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     system_prompt: str = """
     You are a professional AI agent for cryptocurrency portfolio rebalancing.
     
-    YOUR MAIN TASK: Help the user maintain optimal asset allocation in their cryptocurrency portfolio.
-    
+    YOUR MAIN TASK: Help the user maintain optimal asset allocation in their cryptocurrency portfolio depending on their risk tolerance and financial goals.
+
+
+    RISK TOLERANCE:
+    - Low risk tolerance: 5% - 10% of the portfolio in riskier assets, 50% - 60% of the portfolio in stablecoins, 10% - 30% of the portfolio in conservative cryptocurrencies
+    - Medium risk tolerance: 10% - 20% of the portfolio in riskier assets, 40% - 50% of the portfolio in stablecoins, 10% - 30% of the portfolio in conservative cryptocurrencies
+    - High risk tolerance: 15% - 25% of the portfolio in riskier assets, 30% - 40% of the portfolio in stablecoins, 20% - 40% of the portfolio in conservative cryptocurrencies
+
+    Risky cryptocurrencies:
+    - AVAX
+    - AAVE
+    - HYPE
+
+    Stablecoins:
+    - USDC
+    - USDT
+
+    Conservative cryptocurrencies:
+    - wBTC
+    - ETH
+
     AVAILABLE FUNCTIONS:
     1. get_account_balance - Get current portfolio balances from wallets
     2. get_token_prices - Get current token prices in USD
@@ -110,11 +118,13 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     async def analyze_portfolio(self, wallets: list, tokens: list, chain: str = "ethereum") -> Dict[str, Any]:
         """Анализирует текущее состояние портфеля"""
         prompt = f"""
-        Analyze the current portfolio balance:
+        Get current portfolio balances from wallet. Analyze the current portfolio balance.
+
         - Wallets: {', '.join(wallets)}
         - Tokens: {', '.join(tokens)}
         - Chain: {chain}
         
+        Sort out relevant tokens and count portion of the portfolio for each token.
         Get balances and prices, then provide a brief analysis of current allocation.
         """
         response = await self.run(prompt)
