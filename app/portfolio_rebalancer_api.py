@@ -4,12 +4,16 @@ REST API сервер для агента ребалансировки порт�
 """
 import asyncio
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
-from portfolio_rebalancer_agent import PortfolioRebalancerAgent
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+from app.agent import PortfolioRebalancerAgent
 from spoon_ai.chat import ChatBot
+from app.database import Wallet, Strategy, StrategyWallet, Recommendation, ChatMessageDB, init_db
+from app.db_dependency import get_db
 import uvicorn
 import os
 import json
@@ -117,13 +121,8 @@ class AgentConfigRequest(BaseModel):
     min_profit_threshold_usd: Optional[float] = Field(default=None, description="Минимальная прибыль в USD")
 
 
-# ==================== IN-MEMORY ХРАНИЛИЩЕ ====================
-# В production замените на реальную БД (PostgreSQL, MongoDB и т.д.)
-
-wallets_db: Dict[str, Dict] = {}
-strategies_db: Dict[str, Dict] = {}
-recommendations_db: Dict[str, Dict] = {}
-chat_history: List[Dict] = []
+# ==================== БАЗА ДАННЫХ ====================
+# Используется PostgreSQL через SQLAlchemy
 
 
 # ==================== ИНИЦИАЛИЗАЦИЯ FASTAPI ====================
@@ -209,6 +208,15 @@ async def parse_strategy_description(description: str) -> Dict[str, float]:
 async def startup_event():
     """Инициализация при запуске"""
     print("🚀 Запуск API сервера ребалансировки портфеля...")
+    
+    # Инициализация БД
+    try:
+        init_db()
+        print("✅ База данных инициализирована")
+    except Exception as e:
+        print(f"⚠️  Предупреждение при инициализации БД: {e}")
+        print("   Убедитесь, что PostgreSQL запущен и доступен")
+    
     get_agent()
     print("✅ Агент инициализирован")
 
@@ -256,16 +264,18 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(db: Session = Depends(get_db)):
     """Проверка здоровья сервиса"""
     try:
         agent = get_agent()
+        wallets_count = db.query(Wallet).count()
+        strategies_count = db.query(Strategy).count()
         return {
             "status": "healthy",
             "agent_initialized": agent is not None,
             "mode": agent.mode if agent else None,
-            "wallets_count": len(wallets_db),
-            "strategies_count": len(strategies_db)
+            "wallets_count": wallets_count,
+            "strategies_count": strategies_count
         }
     except Exception as e:
         return {
@@ -277,172 +287,319 @@ async def health_check():
 # ==================== УПРАВЛЕНИЕ КОШЕЛЬКАМИ ====================
 
 @app.get("/api/wallets", response_model=List[WalletResponse])
-async def get_wallets():
+async def get_wallets(db: Session = Depends(get_db)):
     """Получить список всех кошельков"""
-    return [WalletResponse(**wallet) for wallet in wallets_db.values()]
+    wallets = db.query(Wallet).all()
+    return [
+        WalletResponse(
+            id=str(w.id),
+            address=w.address,
+            chain=w.chain,
+            label=w.label,
+            tokens=w.tokens or [],
+            created_at=w.created_at.isoformat(),
+            updated_at=w.updated_at.isoformat()
+        )
+        for w in wallets
+    ]
 
 
 @app.post("/api/wallets", response_model=WalletResponse, status_code=201)
-async def create_wallet(wallet: WalletCreate):
+async def create_wallet(wallet: WalletCreate, db: Session = Depends(get_db)):
     """Создать новый кошелек"""
-    wallet_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    # Проверяем, не существует ли уже кошелек с таким адресом
+    existing = db.query(Wallet).filter(Wallet.address == wallet.address).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Кошелек с таким адресом уже существует")
     
-    wallet_data = {
-        "id": wallet_id,
-        "address": wallet.address,
-        "chain": wallet.chain,
-        "label": wallet.label,
-        "tokens": wallet.tokens or [],
-        "created_at": now,
-        "updated_at": now
-    }
+    db_wallet = Wallet(
+        address=wallet.address,
+        chain=wallet.chain,
+        label=wallet.label,
+        tokens=wallet.tokens or []
+    )
+    db.add(db_wallet)
+    db.commit()
+    db.refresh(db_wallet)
     
-    wallets_db[wallet_id] = wallet_data
-    return WalletResponse(**wallet_data)
+    return WalletResponse(
+        id=str(db_wallet.id),
+        address=db_wallet.address,
+        chain=db_wallet.chain,
+        label=db_wallet.label,
+        tokens=db_wallet.tokens or [],
+        created_at=db_wallet.created_at.isoformat(),
+        updated_at=db_wallet.updated_at.isoformat()
+    )
 
 
 @app.get("/api/wallets/{wallet_id}", response_model=WalletResponse)
-async def get_wallet(wallet_id: str):
+async def get_wallet(wallet_id: str, db: Session = Depends(get_db)):
     """Получить кошелек по ID"""
-    if wallet_id not in wallets_db:
+    try:
+        wallet_uuid = uuid.UUID(wallet_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    wallet = db.query(Wallet).filter(Wallet.id == wallet_uuid).first()
+    if not wallet:
         raise HTTPException(status_code=404, detail="Кошелек не найден")
-    return WalletResponse(**wallets_db[wallet_id])
+    
+    return WalletResponse(
+        id=str(wallet.id),
+        address=wallet.address,
+        chain=wallet.chain,
+        label=wallet.label,
+        tokens=wallet.tokens or [],
+        created_at=wallet.created_at.isoformat(),
+        updated_at=wallet.updated_at.isoformat()
+    )
 
 
 @app.put("/api/wallets/{wallet_id}", response_model=WalletResponse)
-async def update_wallet(wallet_id: str, wallet_update: WalletUpdate):
+async def update_wallet(wallet_id: str, wallet_update: WalletUpdate, db: Session = Depends(get_db)):
     """Обновить кошелек"""
-    if wallet_id not in wallets_db:
+    try:
+        wallet_uuid = uuid.UUID(wallet_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    wallet = db.query(Wallet).filter(Wallet.id == wallet_uuid).first()
+    if not wallet:
         raise HTTPException(status_code=404, detail="Кошелек не найден")
     
-    wallet_data = wallets_db[wallet_id]
-    
     if wallet_update.chain is not None:
-        wallet_data["chain"] = wallet_update.chain
+        wallet.chain = wallet_update.chain
     if wallet_update.label is not None:
-        wallet_data["label"] = wallet_update.label
+        wallet.label = wallet_update.label
     if wallet_update.tokens is not None:
-        wallet_data["tokens"] = wallet_update.tokens
+        wallet.tokens = wallet_update.tokens
     
-    wallet_data["updated_at"] = datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(wallet)
     
-    return WalletResponse(**wallet_data)
+    return WalletResponse(
+        id=str(wallet.id),
+        address=wallet.address,
+        chain=wallet.chain,
+        label=wallet.label,
+        tokens=wallet.tokens or [],
+        created_at=wallet.created_at.isoformat(),
+        updated_at=wallet.updated_at.isoformat()
+    )
 
 
 @app.delete("/api/wallets/{wallet_id}", status_code=204)
-async def delete_wallet(wallet_id: str):
+async def delete_wallet(wallet_id: str, db: Session = Depends(get_db)):
     """Удалить кошелек"""
-    if wallet_id not in wallets_db:
+    try:
+        wallet_uuid = uuid.UUID(wallet_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    wallet = db.query(Wallet).filter(Wallet.id == wallet_uuid).first()
+    if not wallet:
         raise HTTPException(status_code=404, detail="Кошелек не найден")
     
-    # Удаляем кошелек из всех стратегий
-    for strategy in strategies_db.values():
-        if wallet_id in strategy["wallet_ids"]:
-            strategy["wallet_ids"].remove(wallet_id)
-    
-    del wallets_db[wallet_id]
+    # Удаляем связи со стратегиями (cascade удалит их автоматически)
+    db.delete(wallet)
+    db.commit()
     return None
 
 
 # ==================== УПРАВЛЕНИЕ СТРАТЕГИЯМИ ====================
 
 @app.get("/api/strategies", response_model=List[StrategyResponse])
-async def get_strategies():
+async def get_strategies(db: Session = Depends(get_db)):
     """Получить список всех стратегий"""
-    return [StrategyResponse(**strategy) for strategy in strategies_db.values()]
+    strategies = db.query(Strategy).all()
+    result = []
+    for s in strategies:
+        wallet_links = db.query(StrategyWallet).filter(StrategyWallet.strategy_id == s.id).all()
+        wallet_ids = [str(sw.wallet_id) for sw in wallet_links]
+        result.append(StrategyResponse(
+            id=str(s.id),
+            name=s.name,
+            description=s.description,
+            target_allocation=s.target_allocation,
+            wallet_ids=wallet_ids,
+            threshold_percent=s.threshold_percent,
+            min_profit_threshold_usd=s.min_profit_threshold_usd,
+            created_at=s.created_at.isoformat(),
+            updated_at=s.updated_at.isoformat()
+        ))
+    return result
 
 
 @app.post("/api/strategies", response_model=StrategyResponse, status_code=201)
-async def create_strategy(strategy: StrategyCreate):
+async def create_strategy(strategy: StrategyCreate, db: Session = Depends(get_db)):
     """Создать новую стратегию"""
     # Проверяем существование кошельков
+    wallet_uuids = []
     for wallet_id in strategy.wallet_ids:
-        if wallet_id not in wallets_db:
-            raise HTTPException(status_code=404, detail=f"Кошелек {wallet_id} не найден")
+        try:
+            wallet_uuid = uuid.UUID(wallet_id)
+            wallet = db.query(Wallet).filter(Wallet.id == wallet_uuid).first()
+            if not wallet:
+                raise HTTPException(status_code=404, detail=f"Кошелек {wallet_id} не найден")
+            wallet_uuids.append(wallet_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Неверный формат ID кошелька: {wallet_id}")
     
     # Парсим описание стратегии
     target_allocation = await parse_strategy_description(strategy.description)
     
-    strategy_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    # Создаем стратегию
+    db_strategy = Strategy(
+        name=strategy.name,
+        description=strategy.description,
+        target_allocation=target_allocation,
+        threshold_percent=strategy.threshold_percent,
+        min_profit_threshold_usd=strategy.min_profit_threshold_usd
+    )
+    db.add(db_strategy)
+    db.commit()
+    db.refresh(db_strategy)
     
-    strategy_data = {
-        "id": strategy_id,
-        "name": strategy.name,
-        "description": strategy.description,
-        "target_allocation": target_allocation,
-        "wallet_ids": strategy.wallet_ids,
-        "threshold_percent": strategy.threshold_percent,
-        "min_profit_threshold_usd": strategy.min_profit_threshold_usd,
-        "created_at": now,
-        "updated_at": now
-    }
+    # Создаем связи с кошельками
+    for wallet_uuid in wallet_uuids:
+        link = StrategyWallet(strategy_id=db_strategy.id, wallet_id=wallet_uuid)
+        db.add(link)
+    db.commit()
     
-    strategies_db[strategy_id] = strategy_data
-    return StrategyResponse(**strategy_data)
+    return StrategyResponse(
+        id=str(db_strategy.id),
+        name=db_strategy.name,
+        description=db_strategy.description,
+        target_allocation=db_strategy.target_allocation,
+        wallet_ids=strategy.wallet_ids,
+        threshold_percent=db_strategy.threshold_percent,
+        min_profit_threshold_usd=db_strategy.min_profit_threshold_usd,
+        created_at=db_strategy.created_at.isoformat(),
+        updated_at=db_strategy.updated_at.isoformat()
+    )
 
 
 @app.get("/api/strategies/{strategy_id}", response_model=StrategyResponse)
-async def get_strategy(strategy_id: str):
+async def get_strategy(strategy_id: str, db: Session = Depends(get_db)):
     """Получить стратегию по ID"""
-    if strategy_id not in strategies_db:
+    try:
+        strategy_uuid = uuid.UUID(strategy_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_uuid).first()
+    if not strategy:
         raise HTTPException(status_code=404, detail="Стратегия не найдена")
-    return StrategyResponse(**strategies_db[strategy_id])
+    
+    wallet_links = db.query(StrategyWallet).filter(StrategyWallet.strategy_id == strategy.id).all()
+    wallet_ids = [str(sw.wallet_id) for sw in wallet_links]
+    
+    return StrategyResponse(
+        id=str(strategy.id),
+        name=strategy.name,
+        description=strategy.description,
+        target_allocation=strategy.target_allocation,
+        wallet_ids=wallet_ids,
+        threshold_percent=strategy.threshold_percent,
+        min_profit_threshold_usd=strategy.min_profit_threshold_usd,
+        created_at=strategy.created_at.isoformat(),
+        updated_at=strategy.updated_at.isoformat()
+    )
 
 
 @app.put("/api/strategies/{strategy_id}", response_model=StrategyResponse)
-async def update_strategy(strategy_id: str, strategy_update: StrategyUpdate):
+async def update_strategy(strategy_id: str, strategy_update: StrategyUpdate, db: Session = Depends(get_db)):
     """Обновить стратегию"""
-    if strategy_id not in strategies_db:
+    try:
+        strategy_uuid = uuid.UUID(strategy_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_uuid).first()
+    if not strategy:
         raise HTTPException(status_code=404, detail="Стратегия не найдена")
     
-    strategy_data = strategies_db[strategy_id]
-    
     if strategy_update.name is not None:
-        strategy_data["name"] = strategy_update.name
+        strategy.name = strategy_update.name
     if strategy_update.description is not None:
-        strategy_data["description"] = strategy_update.description
+        strategy.description = strategy_update.description
         # Перепарсиваем описание
-        strategy_data["target_allocation"] = await parse_strategy_description(strategy_update.description)
+        strategy.target_allocation = await parse_strategy_description(strategy_update.description)
     if strategy_update.wallet_ids is not None:
-        # Проверяем существование кошельков
+        # Удаляем старые связи
+        db.query(StrategyWallet).filter(StrategyWallet.strategy_id == strategy.id).delete()
+        # Проверяем и создаем новые связи
+        wallet_uuids = []
         for wallet_id in strategy_update.wallet_ids:
-            if wallet_id not in wallets_db:
-                raise HTTPException(status_code=404, detail=f"Кошелек {wallet_id} не найден")
-        strategy_data["wallet_ids"] = strategy_update.wallet_ids
+            try:
+                wallet_uuid = uuid.UUID(wallet_id)
+                wallet = db.query(Wallet).filter(Wallet.id == wallet_uuid).first()
+                if not wallet:
+                    raise HTTPException(status_code=404, detail=f"Кошелек {wallet_id} не найден")
+                wallet_uuids.append(wallet_uuid)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Неверный формат ID кошелька: {wallet_id}")
+        
+        for wallet_uuid in wallet_uuids:
+            link = StrategyWallet(strategy_id=strategy.id, wallet_id=wallet_uuid)
+            db.add(link)
     if strategy_update.threshold_percent is not None:
-        strategy_data["threshold_percent"] = strategy_update.threshold_percent
+        strategy.threshold_percent = strategy_update.threshold_percent
     if strategy_update.min_profit_threshold_usd is not None:
-        strategy_data["min_profit_threshold_usd"] = strategy_update.min_profit_threshold_usd
+        strategy.min_profit_threshold_usd = strategy_update.min_profit_threshold_usd
     
-    strategy_data["updated_at"] = datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(strategy)
     
-    return StrategyResponse(**strategy_data)
+    wallet_links = db.query(StrategyWallet).filter(StrategyWallet.strategy_id == strategy.id).all()
+    wallet_ids = [str(sw.wallet_id) for sw in wallet_links]
+    
+    return StrategyResponse(
+        id=str(strategy.id),
+        name=strategy.name,
+        description=strategy.description,
+        target_allocation=strategy.target_allocation,
+        wallet_ids=wallet_ids,
+        threshold_percent=strategy.threshold_percent,
+        min_profit_threshold_usd=strategy.min_profit_threshold_usd,
+        created_at=strategy.created_at.isoformat(),
+        updated_at=strategy.updated_at.isoformat()
+    )
 
 
 @app.delete("/api/strategies/{strategy_id}", status_code=204)
-async def delete_strategy(strategy_id: str):
+async def delete_strategy(strategy_id: str, db: Session = Depends(get_db)):
     """Удалить стратегию"""
-    if strategy_id not in strategies_db:
+    try:
+        strategy_uuid = uuid.UUID(strategy_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_uuid).first()
+    if not strategy:
         raise HTTPException(status_code=404, detail="Стратегия не найдена")
     
-    del strategies_db[strategy_id]
+    db.delete(strategy)
+    db.commit()
     return None
 
 
 @app.post("/api/strategies/{strategy_id}/parse")
-async def parse_strategy(strategy_id: str):
+async def parse_strategy(strategy_id: str, db: Session = Depends(get_db)):
     """Парсить описание стратегии в целевое распределение"""
-    if strategy_id not in strategies_db:
+    try:
+        strategy_uuid = uuid.UUID(strategy_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат ID")
+    
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_uuid).first()
+    if not strategy:
         raise HTTPException(status_code=404, detail="Стратегия не найдена")
     
-    strategy = strategies_db[strategy_id]
-    target_allocation = await parse_strategy_description(strategy["description"])
-    
-    # Обновляем стратегию
-    strategy["target_allocation"] = target_allocation
-    strategy["updated_at"] = datetime.utcnow().isoformat()
+    target_allocation = await parse_strategy_description(strategy.description)
+    strategy.target_allocation = target_allocation
+    db.commit()
     
     return {
         "success": True,
@@ -617,10 +774,14 @@ async def get_chat_history(limit: int = 50):
 # ==================== УПРАВЛЕНИЕ АГЕНТОМ ====================
 
 @app.get("/api/agent/status")
-async def get_agent_status():
+async def get_agent_status(db: Session = Depends(get_db)):
     """Получить текущий статус и конфигурацию агента"""
     try:
         agent = get_agent()
+        wallets_count = db.query(Wallet).count()
+        strategies_count = db.query(Strategy).count()
+        recommendations_count = db.query(Recommendation).count()
+        chat_messages_count = db.query(ChatMessageDB).count()
         return {
             "success": True,
             "status": {
@@ -631,10 +792,10 @@ async def get_agent_status():
                 "max_steps": agent.max_steps
             },
             "statistics": {
-                "wallets_count": len(wallets_db),
-                "strategies_count": len(strategies_db),
-                "recommendations_count": len(recommendations_db),
-                "chat_messages_count": len(chat_history)
+                "wallets_count": wallets_count,
+                "strategies_count": strategies_count,
+                "recommendations_count": recommendations_count,
+                "chat_messages_count": chat_messages_count
             }
         }
     except Exception as e:
