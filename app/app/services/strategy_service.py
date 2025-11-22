@@ -5,9 +5,12 @@ import uuid
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
+import logging
 
 from app.db.models import Strategy, Wallet, StrategyWallet
 from app.api.schemas import StrategyCreate, StrategyUpdate, StrategyResponse
+
+logger = logging.getLogger(__name__)
 
 
 class StrategyService:
@@ -59,6 +62,7 @@ class StrategyService:
         try:
             return json.loads(response)
         except json.JSONDecodeError:
+            logger.error(f"Не удалось распарсить описание стратегии. Ответ агента: {response}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Не удалось распарсить описание стратегии. Ответ агента: {response}"
@@ -141,12 +145,20 @@ class StrategyService:
         db.add(db_strategy)
         db.commit()
         db.refresh(db_strategy)
+        logger.info(f"Стратегия создана: {db_strategy.id} (name: {strategy.name}, user_id: {user_id})")
         
         # Создаем связи с кошельками
         for wallet_uuid in wallet_uuids:
             link = StrategyWallet(strategy_id=db_strategy.id, wallet_id=wallet_uuid)
             db.add(link)
         db.commit()
+        if wallet_uuids:
+            logger.debug(f"Стратегия {db_strategy.id} связана с {len(wallet_uuids)} кошельками")
+        
+        # Запускаем мониторинг стратегии
+        from app.services.strategy_monitor_service import StrategyMonitorService
+        await StrategyMonitorService.add_strategy_monitoring(db_strategy.id)
+        logger.debug(f"Мониторинг стратегии {db_strategy.id} запущен")
         
         return StrategyResponse(
             id=str(db_strategy.id),
@@ -220,7 +232,7 @@ class StrategyService:
         )
     
     @staticmethod
-    def delete_strategy(db: Session, strategy_id: str, user_id: uuid.UUID) -> None:
+    async def delete_strategy(db: Session, strategy_id: str, user_id: uuid.UUID) -> None:
         """Удалить стратегию"""
         try:
             strategy_uuid = uuid.UUID(strategy_id)
@@ -234,6 +246,10 @@ class StrategyService:
         
         if not strategy:
             raise HTTPException(status_code=404, detail="Стратегия не найдена")
+        
+        # Останавливаем мониторинг стратегии
+        from app.services.strategy_monitor_service import StrategyMonitorService
+        await StrategyMonitorService.remove_strategy_monitoring(strategy_uuid)
         
         db.delete(strategy)
         db.commit()

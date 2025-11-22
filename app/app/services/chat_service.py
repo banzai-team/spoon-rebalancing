@@ -7,10 +7,13 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from datetime import datetime
+import logging
 
 from app.db.models import ChatMessageDB, Strategy, Wallet, StrategyWallet
 from app.api.schemas import ChatMessage, ChatResponse, ChatHistoryResponse
 from app.services.strategy_service import StrategyService
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
@@ -43,6 +46,7 @@ class ChatService:
                 # Создаем новую стратегию из первого сообщения
                 is_first_message = True
                 strategy_name = f"Стратегия от {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+                logger.info(f"Создание новой стратегии для пользователя {user_id} из первого сообщения")
                 
                 # Извлекаем кошельки, если указаны
                 wallet_uuids = []
@@ -68,6 +72,7 @@ class ChatService:
                 )
                 strategy_response = await StrategyService.create_strategy(db, strategy_create, user_id)
                 strategy_uuid = uuid.UUID(strategy_response.id)
+                logger.info(f"Стратегия создана: {strategy_response.id} для пользователя {user_id}")
                 
                 context_parts.append(f"✅ New strategy created: {strategy_name}")
                 context_parts.append(f"Strategy description: {message.message}")

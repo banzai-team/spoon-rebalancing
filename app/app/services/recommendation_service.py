@@ -5,10 +5,13 @@ import uuid
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
+import logging
 
 from app.db.models import Recommendation, Strategy, StrategyWallet, Wallet
 from app.api.schemas import RecommendationRequest, RecommendationResponse
 from app.services.strategy_service import StrategyService
+
+logger = logging.getLogger(__name__)
 
 
 class RecommendationService:
@@ -64,6 +67,7 @@ class RecommendationService:
         target_allocation = await StrategyService.parse_strategy_description(strategy.description)
         
         # Получаем рекомендацию
+        logger.info(f"Создание рекомендации для стратегии {strategy.id} (user_id: {user_id})")
         result = await agent.check_rebalancing(
             wallets=wallet_addresses,
             tokens=list(tokens) if tokens else ["BTC", "ETH", "USDC"],
@@ -81,6 +85,7 @@ class RecommendationService:
         db.add(db_recommendation)
         db.commit()
         db.refresh(db_recommendation)
+        logger.info(f"Рекомендация создана: {db_recommendation.id} для стратегии {strategy.id}")
         
         return RecommendationResponse(
             id=str(db_recommendation.id),

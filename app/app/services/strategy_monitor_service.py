@@ -2,8 +2,9 @@
 Сервис для мониторинга стратегий и автоматической отправки рекомендаций в чат
 """
 import asyncio
+import logging
 import uuid
-from typing import Optional
+from typing import Optional, Dict
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
@@ -12,98 +13,133 @@ from app.services.strategy_service import StrategyService
 from app.services.recommendation_service import RecommendationService
 from app.services.agent_service import AgentService
 
+logger = logging.getLogger(__name__)
+
+# Интервал проверки стратегии (10 минут)
+CHECK_INTERVAL_SECONDS = 600
+
 
 class StrategyMonitorService:
     """Сервис для мониторинга стратегий"""
     
     _running = False
-    _task: Optional[asyncio.Task] = None
+    _tasks: Dict[uuid.UUID, asyncio.Task] = {}  # Словарь задач для каждой стратегии
     
     @classmethod
-    async def start_monitoring(cls, db: Session, check_interval_seconds: int = 3600):
-        """Запустить мониторинг стратегий"""
-        if cls._running:
-            return
-        
-        cls._running = True
-        
-        async def monitor_loop():
-            while cls._running:
-                try:
-                    await cls.check_all_strategies(db)
-                except Exception as e:
-                    print(f"Ошибка при проверке стратегий: {e}")
-                
-                await asyncio.sleep(check_interval_seconds)
-        
-        cls._task = asyncio.create_task(monitor_loop())
-        print(f"✅ Мониторинг стратегий запущен (интервал: {check_interval_seconds} сек)")
-    
-    @classmethod
-    async def start_monitoring_async(cls, check_interval_seconds: int = 3600):
+    async def start_monitoring_async(cls):
         """Запустить мониторинг стратегий с автоматическим получением сессии БД"""
         if cls._running:
             return
         
         cls._running = True
         
-        async def monitor_loop():
+        # Загружаем все стратегии и планируем проверки
+        from app.db import get_db
+        db = next(get_db())
+        try:
+            strategies = db.query(Strategy).all()
+            logger.info(f"Найдено {len(strategies)} стратегий для мониторинга")
+            
+            for strategy in strategies:
+                await cls.schedule_strategy_check(strategy.id)
+        finally:
+            db.close()
+        
+        logger.info(f"✅ Мониторинг стратегий запущен (интервал: {CHECK_INTERVAL_SECONDS} сек для каждой стратегии)")
+    
+    @classmethod
+    async def schedule_strategy_check(cls, strategy_id: uuid.UUID):
+        """Планирует проверку стратегии на основе last_checked_at"""
+        # Отменяем существующую задачу, если есть
+        if strategy_id in cls._tasks:
+            cls._tasks[strategy_id].cancel()
+            try:
+                await cls._tasks[strategy_id]
+            except asyncio.CancelledError:
+                pass
+        
+        async def strategy_monitor_loop():
             from app.db import get_db
             while cls._running:
                 try:
                     db = next(get_db())
                     try:
-                        await cls.check_all_strategies(db)
+                        strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+                        if not strategy:
+                            logger.warning(f"Стратегия {strategy_id} не найдена, останавливаем мониторинг")
+                            break
+                        
+                        # Проверяем, нужно ли выполнить проверку сейчас
+                        now = datetime.utcnow()
+                        sleep_time = CHECK_INTERVAL_SECONDS
+                        
+                        if strategy.last_checked_at is None:
+                            # Если никогда не проверялась, проверяем сразу
+                            await cls.check_strategy(db, strategy)
+                            # Обновляем дату последней проверки
+                            strategy.last_checked_at = now
+                            db.commit()
+                            logger.debug(f"Стратегия {strategy_id}: проверка выполнена, следующая через {CHECK_INTERVAL_SECONDS} сек")
+                        else:
+                            # Проверяем, прошло ли 10 минут с последней проверки
+                            time_since_last = now - strategy.last_checked_at
+                            if time_since_last >= timedelta(seconds=CHECK_INTERVAL_SECONDS):
+                                # Время пришло, выполняем проверку
+                                await cls.check_strategy(db, strategy)
+                                # Обновляем дату последней проверки
+                                strategy.last_checked_at = now
+                                db.commit()
+                                logger.debug(f"Стратегия {strategy_id}: проверка выполнена, следующая через {CHECK_INTERVAL_SECONDS} сек")
+                            else:
+                                # Вычисляем время до следующей проверки
+                                time_until_next = timedelta(seconds=CHECK_INTERVAL_SECONDS) - time_since_last
+                                sleep_time = int(time_until_next.total_seconds())
+                                logger.debug(f"Стратегия {strategy_id}: следующая проверка через {sleep_time} сек")
                     finally:
                         db.close()
                 except Exception as e:
-                    print(f"Ошибка при проверке стратегий: {e}")
+                    logger.error(f"Ошибка при проверке стратегии {strategy_id}: {e}", exc_info=True)
                 
-                await asyncio.sleep(check_interval_seconds)
+                # Ждем до следующей проверки
+                await asyncio.sleep(sleep_time)
         
-        cls._task = asyncio.create_task(monitor_loop())
-        print(f"✅ Мониторинг стратегий запущен (интервал: {check_interval_seconds} сек)")
+        cls._tasks[strategy_id] = asyncio.create_task(strategy_monitor_loop())
+        logger.debug(f"Запланирована проверка стратегии {strategy_id}")
     
     @classmethod
     async def stop_monitoring(cls):
         """Остановить мониторинг стратегий"""
         cls._running = False
-        if cls._task:
-            cls._task.cancel()
+        for strategy_id, task in cls._tasks.items():
+            task.cancel()
             try:
-                await cls._task
+                await task
             except asyncio.CancelledError:
                 pass
-        print("⏹️  Мониторинг стратегий остановлен")
+        cls._tasks.clear()
+        logger.info("⏹️  Мониторинг стратегий остановлен")
     
-    @staticmethod
-    async def check_all_strategies(db: Session):
-        """Проверить все стратегии и отправить рекомендации в чат"""
-        strategies = db.query(Strategy).all()
-        
-        for strategy in strategies:
+    @classmethod
+    async def add_strategy_monitoring(cls, strategy_id: uuid.UUID):
+        """Добавить стратегию в мониторинг (вызывается при создании стратегии)"""
+        if cls._running:
+            await cls.schedule_strategy_check(strategy_id)
+    
+    @classmethod
+    async def remove_strategy_monitoring(cls, strategy_id: uuid.UUID):
+        """Удалить стратегию из мониторинга (вызывается при удалении стратегии)"""
+        if strategy_id in cls._tasks:
+            cls._tasks[strategy_id].cancel()
             try:
-                await StrategyMonitorService.check_strategy(db, strategy)
-            except Exception as e:
-                print(f"Ошибка при проверке стратегии {strategy.id}: {e}")
+                await cls._tasks[strategy_id]
+            except asyncio.CancelledError:
+                pass
+            del cls._tasks[strategy_id]
+            logger.debug(f"Мониторинг стратегии {strategy_id} остановлен")
     
     @staticmethod
     async def check_strategy(db: Session, strategy: Strategy):
         """Проверить конкретную стратегию и отправить рекомендацию в чат"""
-        # Проверяем, когда последний раз проверялась стратегия
-        # Получаем последнее сообщение в чате для этой стратегии
-        last_message = db.query(ChatMessageDB).filter(
-            ChatMessageDB.strategy_id == strategy.id,
-            ChatMessageDB.user_id == strategy.user_id
-        ).order_by(ChatMessageDB.created_at.desc()).first()
-        
-        # Если последнее сообщение было менее часа назад, пропускаем
-        if last_message is not None:
-            last_created_at = last_message.created_at
-            if isinstance(last_created_at, datetime):
-                time_since_last = datetime.utcnow() - last_created_at
-                if time_since_last < timedelta(hours=1):
-                    return
         
         # Получаем кошельки стратегии
         wallet_links = db.query(StrategyWallet).filter(
@@ -111,6 +147,7 @@ class StrategyMonitorService:
         ).all()
         
         if len(wallet_links) == 0:
+            logger.debug(f"Стратегия {strategy.id}: нет кошельков для проверки")
             return  # Нет кошельков для проверки
         
         wallet_ids = [sw.wallet_id for sw in wallet_links]
@@ -120,7 +157,10 @@ class StrategyMonitorService:
         ).all()
         
         if not wallets:
+            logger.debug(f"Стратегия {strategy.id}: кошельки не найдены")
             return
+        
+        logger.info(f"Проверка стратегии {strategy.id}: найдено {len(wallets)} кошельков")
         
         wallet_addresses = [str(w.address) for w in wallets]
         tokens = set()
@@ -137,9 +177,11 @@ class StrategyMonitorService:
         
         # Парсим описание стратегии для получения целевого распределения
         strategy_description = str(strategy.description)
+        logger.debug(f"Проверка стратегии {strategy.id}: парсинг описания")
         target_allocation = await StrategyService.parse_strategy_description(strategy_description)
         
         # Получаем рекомендацию
+        logger.debug(f"Проверка стратегии {strategy.id}: получение рекомендации от агента")
         result = await agent.check_rebalancing(
             wallets=wallet_addresses,
             tokens=list(tokens) if tokens else ["BTC", "ETH", "USDC"],
@@ -172,5 +214,5 @@ class StrategyMonitorService:
             db.add(chat_message)
             db.commit()
             
-            print(f"✅ Отправлена рекомендация для стратегии {strategy.id}")
+            logger.info(f"✅ Отправлена рекомендация для стратегии {strategy.id} (user_id: {strategy.user_id})")
 

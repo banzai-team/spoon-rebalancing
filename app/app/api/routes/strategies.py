@@ -60,6 +60,6 @@ async def delete_strategy(
     user_id: uuid.UUID = Depends(get_user_id)
 ):
     """Удалить стратегию"""
-    StrategyService.delete_strategy(db, strategy_id, user_id)
+    await StrategyService.delete_strategy(db, strategy_id, user_id)
     return None
 

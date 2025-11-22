@@ -1,30 +1,17 @@
+# Logs
+logs/
+*.log
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.venv/
 venv/
-ENV/
 env/
+ENV/
+.venv
 
 # IDE
 .vscode/
@@ -33,17 +20,14 @@ env/
 *.swo
 *~
 
-# Environment variables
+# Database
+*.db
+*.sqlite
+
+# Environment
 .env
 .env.local
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-
-# Config files with sensitive data
-config.py
-

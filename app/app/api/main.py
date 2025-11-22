@@ -7,6 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import wallets, strategies, recommendations, chat, agent, token_balances
+from app.core.logging_config import setup_logging, get_logger
+
+# Setup logging
+setup_logging()
+logger = get_logger(__name__)
 
 app = FastAPI(
     title="Portfolio Rebalancer API",
@@ -35,7 +40,7 @@ app.include_router(token_balances.router)
 @app.on_event("startup")
 async def startup_event():
     """Событие при запуске приложения"""
-    print("🚀 Запуск API сервера ребалансировки портфеля...")
+    logger.info("🚀 Запуск API сервера ребалансировки портфеля...")
     
     # Проверка подключения к БД (миграции применяются отдельным контейнером)
     try:
@@ -44,17 +49,17 @@ async def startup_event():
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print("✅ Подключение к базе данных успешно")
+        logger.info("✅ Подключение к базе данных успешно")
         
         # Запускаем мониторинг стратегий в фоне
         from app.services.strategy_monitor_service import StrategyMonitorService
-        from app.db import get_db
-        # Запускаем в фоне (интервал 1 час = 3600 секунд)
+        # Запускаем в фоне (каждая стратегия проверяется каждые 10 минут)
         # Используем get_db() внутри мониторинга для получения сессии
-        asyncio.create_task(StrategyMonitorService.start_monitoring_async(check_interval_seconds=3600))
+        asyncio.create_task(StrategyMonitorService.start_monitoring_async())
+        logger.info("✅ Мониторинг стратегий запущен")
     except Exception as e:
-        print(f"⚠️  Предупреждение при подключении к БД: {e}")
-        print("   Убедитесь, что PostgreSQL запущен и миграции применены")
+        logger.warning(f"⚠️  Предупреждение при подключении к БД: {e}")
+        logger.warning("   Убедитесь, что PostgreSQL запущен и миграции применены")
 
 
 @app.get("/")

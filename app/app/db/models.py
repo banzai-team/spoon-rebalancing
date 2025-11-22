@@ -55,6 +55,7 @@ class Strategy(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
+    last_checked_at = Column(DateTime, nullable=True)  # Дата последней проверки стратегии
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     

@@ -5,11 +5,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 import uuid
 from typing import Optional
+import logging
 
 from app.db import get_db, get_user_id
 from app.api.schemas import ChatMessage, ChatResponse, ChatHistoryResponse
 from app.services.chat_service import ChatService
 from app.services.agent_service import AgentService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -21,7 +24,14 @@ async def chat_with_agent(
     user_id: uuid.UUID = Depends(get_user_id)
 ):
     """Отправить сообщение агенту"""
-    return await ChatService.send_message(db, message, user_id, AgentService.get_agent)
+    logger.info(f"Получено сообщение от пользователя {user_id}, strategy_id: {message.strategy_id}")
+    try:
+        response = await ChatService.send_message(db, message, user_id, AgentService.get_agent)
+        logger.debug(f"Ответ агента отправлен пользователю {user_id}, message_id: {response.message_id}")
+        return response
+    except Exception as e:
+        logger.error(f"Ошибка при обработке сообщения от пользователя {user_id}: {e}", exc_info=True)
+        raise
 
 
 @router.get("/history", response_model=ChatHistoryResponse)

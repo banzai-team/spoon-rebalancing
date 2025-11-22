@@ -3,18 +3,32 @@
 """
 import asyncio
 import json
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional, TypedDict, Set
 from spoon_ai.agents.toolcall import ToolCallAgent
 from spoon_ai.chat import ChatBot
 from spoon_ai.tools.crypto_tools import get_crypto_tools
 from spoon_ai.tools import ToolManager
-from app.tools.portfolio_rebalancer_tools import (
-    GetTokenPricesTool,
+from app.tools.rebalancer_tools import (
     CalculateRebalancingTool,
     EstimateGasFeesTool,
-    SuggestRebalancingTradesTool
+    SuggestRebalancingTradesTool,
+    GetStrategiesTool,
+    GetStrategyDetailsTool,
+    FindStrategyTool,
 )
+from app.tools.chainbase_tools import GetAccountTokensTool, GetAccountBalanceTool
 
+class CryptoAnalysisState(TypedDict, total=False):
+    user_query: str
+    selected_tokens: List[str]
+    token_details: Dict[str, Any]
+    token_balances: Dict[str, float]
+    token_prices: Dict[str, float]
+    allocation_deviation: Dict[str, float]
+    rebalancing_actions: Dict[str, Any]
+    gas_fees: Dict[str, Any]
+    rebalancing_summary: str
+    execution_log: List[str]
 
 class PortfolioRebalancerAgent(ToolCallAgent):
     """AI-агент для автоматической ребалансировки криптопортфеля"""
@@ -27,14 +41,14 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     YOUR MAIN TASK: Help the user maintain optimal asset allocation in their cryptocurrency portfolio.
     
     AVAILABLE FUNCTIONS:
-    1. get_portfolio_balance - Get current portfolio balances from wallets
+    1. get_account_balance - Get current portfolio balances from wallets
     2. get_token_prices - Get current token prices in USD
     3. calculate_rebalancing - Calculate necessary actions for rebalancing
     4. estimate_gas_fees - Estimate gas fees for transactions
     5. suggest_rebalancing_trades - Suggest specific trades considering fees
     
     WORKFLOW:
-    1. Get current portfolio balances (get_portfolio_balance)
+    1. Get current portfolio balances (get_account_balance)
     2. Get current token prices (get_token_prices)
     3. Calculate current allocation percentages
     4. Compare with target allocation and calculate deviations (calculate_rebalancing)
@@ -61,10 +75,14 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     """
 
     available_tools: ToolManager = ToolManager([
-        GetTokenPricesTool(),
         CalculateRebalancingTool(),
         EstimateGasFeesTool(),
         SuggestRebalancingTradesTool(),
+        GetStrategiesTool(),
+        GetStrategyDetailsTool(),
+        FindStrategyTool(),
+        GetAccountTokensTool(),
+        GetAccountBalanceTool(),
         *get_crypto_tools()
     ])
     
@@ -92,7 +110,7 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     async def analyze_portfolio(self, wallets: list, tokens: list, chain: str = "ethereum") -> Dict[str, Any]:
         """Анализирует текущее состояние портфеля"""
         prompt = f"""
-        Analyze the current portfolio status:
+        Analyze the current portfolio balance:
         - Wallets: {', '.join(wallets)}
         - Tokens: {', '.join(tokens)}
         - Chain: {chain}
