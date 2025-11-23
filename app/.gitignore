@@ -31,3 +31,5 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+portfolio_rebalancer.egg-info/

@@ -1,5 +1,5 @@
 """
-Сервис для мониторинга стратегий и автоматической отправки рекомендаций в чат
+Сервис для мониторинга стратегий и автоматического создания рекомендаций
 """
 import asyncio
 import logging
@@ -8,7 +8,7 @@ from typing import Optional, Dict
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
-from app.db.models import Strategy, StrategyWallet, Wallet, ChatMessageDB
+from app.db.models import Strategy, StrategyWallet, Wallet, Recommendation
 from app.services.strategy_service import StrategyService
 from app.services.recommendation_service import RecommendationService
 from app.services.agent_service import AgentService
@@ -139,7 +139,7 @@ class StrategyMonitorService:
     
     @staticmethod
     async def check_strategy(db: Session, strategy: Strategy):
-        """Проверить конкретную стратегию и отправить рекомендацию в чат"""
+        """Проверить конкретную стратегию и создать рекомендацию"""
         
         # Получаем кошельки стратегии
         wallet_links = db.query(StrategyWallet).filter(
@@ -191,28 +191,29 @@ class StrategyMonitorService:
         
         recommendation_text = result.get("recommendation", "")
         
-        # Если есть рекомендация, отправляем её в чат
+        # Если есть рекомендация, создаем Recommendation
         if recommendation_text and len(recommendation_text.strip()) > 0:
-            # Формируем сообщение от агента
-            agent_message = f"""
-📊 Автоматическая проверка портфеля для стратегии "{strategy.name}"
+            # Формируем текст рекомендации с контекстом
+            formatted_recommendation = f"""📊 Автоматическая проверка портфеля для стратегии "{strategy.name}"
 
 {recommendation_text}
 
 ---
-*Это автоматическое сообщение. Вы можете ответить, чтобы обновить стратегию или задать вопросы.*
+*Это автоматическая рекомендация, создана {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC*
 """
             
-            # Сохраняем сообщение в чат
-            chat_message = ChatMessageDB(
+            # Создаем рекомендацию в БД
+            recommendation = Recommendation(
                 user_id=strategy.user_id,
-                user_message="",  # Пустое, так как это сообщение от агента
-                agent_response=agent_message,
                 strategy_id=strategy.id,
-                wallet_ids=[str(wid) for wid in wallet_ids]
+                recommendation=formatted_recommendation,
+                analysis=result  # Сохраняем весь результат анализа
             )
-            db.add(chat_message)
+            db.add(recommendation)
             db.commit()
+            db.refresh(recommendation)
             
-            logger.info(f"✅ Отправлена рекомендация для стратегии {strategy.id} (user_id: {strategy.user_id})")
+            logger.info(f"✅ Создана рекомендация {recommendation.id} для стратегии {strategy.id} (user_id: {strategy.user_id})")
+        else:
+            logger.debug(f"Стратегия {strategy.id}: рекомендация пуста, не создаем запись")
 

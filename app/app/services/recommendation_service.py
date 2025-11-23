@@ -61,7 +61,7 @@ class RecommendationService:
         
         # Настраиваем агента
         agent = get_agent_func()
-        agent.set_min_profit(strategy.min_profit_threshold_usd)
+        # agent.set_min_profit(strategy.min_profit_threshold_usd)
         
         # Парсим описание стратегии для получения целевого распределения
         target_allocation = await StrategyService.parse_strategy_description(strategy.description)

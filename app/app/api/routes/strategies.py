@@ -5,14 +5,14 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import uuid
-
+import logging
 from app.db import get_db, get_user_id
 from app.api.schemas import StrategyCreate, StrategyUpdate, StrategyResponse
 from app.services.strategy_service import StrategyService
 
 router = APIRouter(prefix="/api/strategies", tags=["strategies"])
 
-
+logger = logging.getLogger(__name__)
 @router.get("", response_model=List[StrategyResponse])
 async def get_strategies(
     db: Session = Depends(get_db),
@@ -39,6 +39,7 @@ async def get_strategy(
     user_id: uuid.UUID = Depends(get_user_id)
 ):
     """Получить стратегию по ID"""
+    logger.info("Getting strategy: %s", strategy_id)
     return StrategyService.get_strategy(db, strategy_id, user_id)
 
 

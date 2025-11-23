@@ -8,7 +8,9 @@ from fastapi import HTTPException
 
 from app.db.models import Wallet
 from app.api.schemas import WalletCreate, WalletUpdate, WalletResponse
+import logging
 
+logger = logging.getLogger(__name__)
 
 class WalletService:
     """Сервис для управления кошельками"""
@@ -23,7 +25,7 @@ class WalletService:
                 address=w.address,
                 chain=w.chain,
                 label=w.label,
-                tokens=w.tokens or [],
+                tokens=w.tokens or ["BTC", "ETH", "USDC"],
                 created_at=w.created_at.isoformat(),
                 updated_at=w.updated_at.isoformat()
             )
@@ -51,7 +53,7 @@ class WalletService:
             address=wallet.address,
             chain=wallet.chain,
             label=wallet.label,
-            tokens=wallet.tokens or [],
+            tokens=wallet.tokens or ["BTC", "ETH", "USDC"],
             created_at=wallet.created_at.isoformat(),
             updated_at=wallet.updated_at.isoformat()
         )
@@ -59,6 +61,7 @@ class WalletService:
     @staticmethod
     def create_wallet(db: Session, wallet: WalletCreate, user_id: uuid.UUID) -> WalletResponse:
         """Создать новый кошелек"""
+        logger.info("Creating wallet: %s", wallet)
         # Проверяем, не существует ли уже кошелек с таким адресом у этого пользователя
         existing = db.query(Wallet).filter(
             Wallet.address == wallet.address,

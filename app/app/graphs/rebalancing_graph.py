@@ -104,43 +104,68 @@ async def fetch_portfolio_balances(
                 address=wallet_address
             )
 
-            logger.info("tokens_result: %s", tokens_result)
-            logger.info("balance_result: %s", balance_result)
+            logger.debug("tokens_result: %s", tokens_result)
+            logger.debug("balance_result: %s", balance_result)
             
-            # Обрабатываем результаты
-            if "error" not in tokens_result and "data" in tokens_result:
-                for token_data in tokens_result.get("data", []):
-                    symbol = token_data.get("symbol", "").upper()
+            # Обрабатываем результаты GetAccountTokensTool
+            # Структура ответа: {'code': 0, 'message': 'ok', 'data': [...], 'count': N}
+            if "error" not in tokens_result:
+                # Проверяем успешность ответа
+                code = tokens_result.get("code", -1)
+                if code == 0 and "data" in tokens_result:
+                    token_list = tokens_result.get("data", [])
+                    logger.debug(f"Обработка {len(token_list)} токенов для кошелька {wallet_address}")
                     
-                    # Получаем decimals (по умолчанию 18 для большинства токенов)
-                    decimals = token_data.get("decimals", 18)
-                    
-                    # Конвертируем баланс из hex строки в число
-                    raw_balance = token_data.get("balance", 0)
-                    balance = convert_hex_balance_to_float(raw_balance, decimals)
-                    
-                    # Получаем баланс в USD (если есть)
-                    balance_usd = float(token_data.get("balance_usd", 0) or 0)
-                    
-                    # Если balance_usd не указан, но есть current_usd_price, вычисляем
-                    if balance_usd == 0 and balance > 0:
-                        current_price = float(token_data.get("current_usd_price", 0) or 0)
-                        if current_price > 0:
-                            balance_usd = balance * current_price
-                    
-                    if symbol and balance > 0:
-                        if symbol not in total_balances_usd:
-                            total_balances_usd[symbol] = 0.0
-                        total_balances_usd[symbol] += balance_usd
+                    for token_data in token_list:
+                        symbol = token_data.get("symbol", "").strip().upper()
                         
-                        if wallet_address not in token_balances:
-                            token_balances[wallet_address] = {}
-                        token_balances[wallet_address][symbol] = {
-                            "balance": balance,
-                            "balance_usd": balance_usd,
-                            "decimals": decimals,
-                            "raw_balance": raw_balance
-                        }
+                        # Пропускаем токены без символа или с некорректными символами
+                        if not symbol or "|" in symbol or len(symbol) > 20:
+                            logger.debug(f"Пропуск токена с некорректным символом: {symbol}")
+                            continue
+                        
+                        # Получаем decimals (по умолчанию 18 для большинства токенов)
+                        decimals = token_data.get("decimals", 18)
+                        
+                        # Конвертируем баланс из hex строки в число используя convert_hex_balance_to_float
+                        raw_balance = token_data.get("balance", "0x0")
+                        balance = convert_hex_balance_to_float(raw_balance, decimals)
+                        
+                        # Пропускаем токены с нулевым балансом
+                        if balance <= 0:
+                            continue
+                        
+                        # Получаем баланс в USD (если есть)
+                        balance_usd = float(token_data.get("balance_usd", 0) or 0)
+                        
+                        # Если balance_usd не указан, но есть current_usd_price, вычисляем
+                        if balance_usd == 0 and balance > 0:
+                            current_price = float(token_data.get("current_usd_price", 0) or 0)
+                            if current_price > 0:
+                                balance_usd = balance * current_price
+                        
+                        # Сохраняем информацию о токене
+                        if symbol:
+                            if symbol not in total_balances_usd:
+                                total_balances_usd[symbol] = 0.0
+                            total_balances_usd[symbol] += balance_usd
+                            
+                            if wallet_address not in token_balances:
+                                token_balances[wallet_address] = {}
+                            token_balances[wallet_address][symbol] = {
+                                "balance": balance,
+                                "balance_usd": balance_usd,
+                                "decimals": decimals,
+                                "raw_balance": raw_balance,
+                                "contract_address": token_data.get("contract_address"),
+                                "name": token_data.get("name")
+                            }
+                            
+                            logger.debug(f"Обработан токен {symbol}: баланс={balance}, USD={balance_usd}")
+                else:
+                    logger.warning(f"Неуспешный ответ от GetAccountTokensTool для {wallet_address}: code={code}")
+            else:
+                logger.warning(f"Ошибка при получении токенов для {wallet_address}: {tokens_result.get('error')}")
             
             # Обрабатываем нативный баланс
             if "error" not in balance_result:

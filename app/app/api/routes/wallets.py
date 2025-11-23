@@ -5,12 +5,14 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import uuid
-
+import logging
 from app.db import get_db, get_user_id
 from app.api.schemas import WalletCreate, WalletUpdate, WalletResponse
 from app.services.wallet_service import WalletService
 
 router = APIRouter(prefix="/api/wallets", tags=["wallets"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=List[WalletResponse])
@@ -29,6 +31,7 @@ async def create_wallet(
     user_id: uuid.UUID = Depends(get_user_id)
 ):
     """Создать новый кошелек"""
+    logger.info("Creating wallet: %s", wallet)
     return WalletService.create_wallet(db, wallet, user_id)
 
 
@@ -39,6 +42,7 @@ async def get_wallet(
     user_id: uuid.UUID = Depends(get_user_id)
 ):
     """Получить кошелек по ID"""
+    logger.info("Getting wallet: %s", wallet_id)
     return WalletService.get_wallet(db, wallet_id, user_id)
 
 
