@@ -72,6 +72,23 @@ services:
       - ./app:/app
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
 
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+    container_name: portfolio_rebalancer_web
+    environment:
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - portfolio_network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
 
