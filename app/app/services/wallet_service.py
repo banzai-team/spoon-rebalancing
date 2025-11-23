@@ -47,16 +47,18 @@ class WalletService:
         
         if not wallet:
             raise HTTPException(status_code=404, detail="Кошелек не найден")
-        
-        return WalletResponse(
+        logger.info("Wallet: %s", wallet)
+        wr = WalletResponse(
             id=str(wallet.id),
             address=wallet.address,
             chain=wallet.chain,
             label=wallet.label,
-            tokens=wallet.tokens or ["BTC", "ETH", "USDC"],
+            tokens=list(wallet.tokens) if wallet.tokens else ["BTC", "ETH", "USDC"],
             created_at=wallet.created_at.isoformat(),
             updated_at=wallet.updated_at.isoformat()
         )
+        logger.info("WalletResponse: %s", wr)
+        return wr
     
     @staticmethod
     def create_wallet(db: Session, wallet: WalletCreate, user_id: uuid.UUID) -> WalletResponse:

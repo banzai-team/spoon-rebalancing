@@ -22,7 +22,7 @@ class AgentService:
             cls._agent = PortfolioRebalancerAgent(
                 llm=ChatBot(
                     llm_provider=os.getenv("LLM_PROVIDER", "openrouter"),
-                    model_name=os.getenv("LLM_MODEL", "x-ai/grok-4.1-fast:free")
+                    model_name=os.getenv("LLM_MODEL", "qwen/qwen3-coder:free")
                 )
             )
         return cls._agent

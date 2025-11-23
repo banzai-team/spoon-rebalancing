@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from app.db.models import Strategy, StrategyWallet, Wallet, Recommendation
 from app.services.strategy_service import StrategyService
 from app.services.recommendation_service import RecommendationService
-from app.services.agent_service import AgentService
+from app.graphs.rebalancing_graph import run_rebalancing_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -172,21 +172,33 @@ class StrategyMonitorService:
             if chain is None:
                 chain = str(wallet.chain)
         
-        # Получаем агента
-        agent = AgentService.get_agent()
-        
         # Парсим описание стратегии для получения целевого распределения
         strategy_description = str(strategy.description)
         logger.debug(f"Проверка стратегии {strategy.id}: парсинг описания")
         target_allocation = await StrategyService.parse_strategy_description(strategy_description)
         
-        # Получаем рекомендацию
-        logger.debug(f"Проверка стратегии {strategy.id}: получение рекомендации от агента")
-        result = await agent.check_rebalancing(
+        # Преобразуем chain из строки в chain_id
+        chain_id_map = {
+            "ethereum": 1,
+            "polygon": 137,
+            "arbitrum": 42161,
+            "optimism": 10,
+            "bsc": 56
+        }
+        chain_id = chain_id_map.get((chain or "ethereum").lower(), 1)
+        
+        # Получаем min_profit_threshold из стратегии, если есть
+        min_profit_threshold = getattr(strategy, 'min_profit_threshold_usd', 50.0)
+        
+        # Используем Graph System для анализа ребалансировки
+        logger.debug(f"Проверка стратегии {strategy.id}: получение рекомендации через Graph System")
+        result = await run_rebalancing_analysis(
             wallets=wallet_addresses,
             tokens=list(tokens) if tokens else ["BTC", "ETH", "USDC"],
             target_allocation=target_allocation,
-            chain=chain or "ethereum"
+            chain_id=chain_id,
+            threshold_percent=5.0,
+            min_profit_threshold_usd=min_profit_threshold
         )
         
         recommendation_text = result.get("recommendation", "")

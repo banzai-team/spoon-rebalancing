@@ -78,6 +78,21 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     
     CRITICAL: You MUST complete ALL steps above. Do not stop after getting balances. Continue with prices, calculations, and recommendations.
     
+    STOPPING CRITERIA (you can ONLY stop when ALL of these are true):
+    1. You have called get_account_tokens AND get_account_balance (balances obtained)
+    2. You have called get_token_prices for at least the main tokens (prices obtained)
+    3. You have called calculate_rebalancing tool (rebalancing calculated)
+    4. You have called estimate_gas_fees tool (gas fees estimated)
+    5. You have called suggest_rebalancing_trades tool (trades suggested)
+    6. You have provided a final recommendation with summary
+    
+    DO NOT STOP if:
+    - You only got balances but haven't calculated rebalancing yet
+    - You only got prices but haven't called calculate_rebalancing yet
+    - You calculated rebalancing but haven't estimated gas fees yet
+    - You estimated gas fees but haven't suggested trades yet
+    - You haven't provided a final recommendation yet
+    
     IMPORTANT RULES:
     - You MUST execute ALL steps in the workflow. Do not stop early.
     - Always verify that expected rebalancing benefits exceed gas fees
@@ -97,6 +112,20 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     - Indicate total gas cost and expected benefit
     - End with a clear recommendation
     
+    COMPLETION CHECKLIST (you can only stop when ALL are done):
+    [ ] Called get_account_tokens
+    [ ] Called get_account_balance
+    [ ] Called get_token_prices for relevant tokens
+    [ ] Calculated portfolio value and allocation
+    [ ] Called calculate_rebalancing tool
+    [ ] Called estimate_gas_fees tool
+    [ ] Called suggest_rebalancing_trades tool
+    [ ] Provided final recommendation with summary
+    
+    If any item above is unchecked, you MUST continue. Do not say "Task finished" or "No action needed" until ALL items are checked.
+    
+    After each step provide checklist with [ ] for each step.
+
     Always respond in the same language the user is using.
     """
 
@@ -121,10 +150,18 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.max_steps = 20  # Увеличено для полного анализа портфеля
+        self.max_steps = 30  # Увеличено для полного анализа портфеля
         self.mode: str = "consultation"  # "consultation" или "autonomous"
         self.target_allocation: Optional[Dict[str, float]] = None
         self.min_profit_threshold_usd: float = 50.0
+        # Трекинг выполненных шагов для проверки завершения
+        self._required_steps = {
+            "get_balances": False,
+            "get_prices": False,
+            "calculate_rebalancing": False,
+            "estimate_gas": False,
+            "suggest_trades": False
+        }
 
     def set_mode(self, mode: str):
         """Устанавливает режим работы: 'consultation' или 'autonomous'"""
@@ -139,6 +176,41 @@ class PortfolioRebalancerAgent(ToolCallAgent):
     def set_min_profit(self, min_profit: float):
         """Устанавливает минимальную прибыль для выполнения ребалансировки"""
         self.min_profit_threshold_usd = min_profit
+    
+    def _check_completion_criteria(self, conversation_history: List[Any]) -> bool:
+        """
+        Проверяет, выполнены ли все необходимые шаги для завершения анализа портфеля.
+        Агент может остановиться только если все критерии выполнены.
+        """
+        # Сбрасываем трекинг при новом запросе
+        if not hasattr(self, '_current_task_steps'):
+            self._current_task_steps = {
+                "get_balances": False,
+                "get_prices": False,
+                "calculate_rebalancing": False,
+                "estimate_gas": False,
+                "suggest_trades": False,
+                "recommendation": False
+            }
+        
+        # Проверяем историю разговора на наличие вызовов инструментов
+        tool_calls_found = {
+            "get_account_tokens": False,
+            "get_account_balance": False,
+            "get_token_prices": False,
+            "calculate_rebalancing": False,
+            "estimate_gas_fees": False,
+            "suggest_rebalancing_trades": False
+        }
+        
+        # Анализируем последние сообщения для определения выполненных шагов
+        # Это используется как дополнительная проверка, основная логика в system_prompt
+        
+        # Для анализа портфеля требуется минимум: балансы, цены, расчет ребалансировки
+        # Но мы полагаемся на system_prompt для контроля, так как ToolCallAgent
+        # сам управляет остановкой на основе ответов LLM
+        
+        return False  # Всегда возвращаем False, чтобы полагаться на system_prompt
     
     @staticmethod
     def process_token_balances(tokens_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -316,13 +388,39 @@ Summarize:
 
 Target allocation: {json.dumps(target_allocation, ensure_ascii=False)}
 
-CRITICAL INSTRUCTIONS:
+BEFORE STOPPING - VERIFY ALL STEPS COMPLETED:
+✓ STEP 1: get_account_tokens called
+✓ STEP 2: get_account_balance called
+✓ STEP 3: get_token_prices called for tokens
+✓ STEP 4: Portfolio value calculated, current_portfolio object created
+✓ STEP 5: calculate_rebalancing tool called
+✓ STEP 6: estimate_gas_fees tool called
+✓ STEP 7: suggest_rebalancing_trades tool called
+✓ STEP 8: Final recommendation provided
+
+ONLY after ALL 8 steps above are completed, you can say the task is finished.
+If any step is missing, you MUST continue and complete it.
+
+CRITICAL STOPPING RULES:
+You can ONLY stop and say "Task finished" when you have completed ALL of these:
+✓ Called get_account_tokens (STEP 1)
+✓ Called get_account_balance (STEP 2)
+✓ Called get_token_prices for tokens (STEP 3)
+✓ Calculated portfolio value and created current_portfolio object (STEP 4)
+✓ Called calculate_rebalancing tool (STEP 5) - REQUIRED
+✓ Called estimate_gas_fees tool (STEP 6) - REQUIRED
+✓ Called suggest_rebalancing_trades tool (STEP 7) - REQUIRED
+✓ Provided final recommendation with summary (STEP 8) - REQUIRED
+
+DO NOT STOP if any step above is missing. Continue until ALL steps are complete.
+
+OTHER INSTRUCTIONS:
 - Complete ALL 8 steps. NEVER stop after STEP 3 (getting prices).
 - After STEP 3, you MUST proceed to STEP 4 (calculations), then STEP 5, 6, 7, 8.
 - If some prices are missing, continue with available data. Use current_usd_price from token data when available.
 - Always call calculate_rebalancing (STEP 5), estimate_gas_fees (STEP 6), and suggest_rebalancing_trades (STEP 7).
 - Do not use get_strategies, get_strategy_details, or find_strategy tools.
-- Do not say "Task finished" until you complete STEP 8.
+- Do not say "Task finished", "No action needed", or "Thinking completed" until you complete STEP 8.
 - Start with STEP 1 immediately.
 """
         

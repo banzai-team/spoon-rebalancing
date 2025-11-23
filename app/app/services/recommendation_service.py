@@ -10,6 +10,7 @@ import logging
 from app.db.models import Recommendation, Strategy, StrategyWallet, Wallet
 from app.api.schemas import RecommendationRequest, RecommendationResponse
 from app.services.strategy_service import StrategyService
+from app.graphs.rebalancing_graph import run_rebalancing_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,9 @@ class RecommendationService:
         db: Session,
         request: RecommendationRequest,
         user_id: uuid.UUID,
-        get_agent_func
+        get_agent_func=None  # Оставлен для обратной совместимости, но не используется
     ) -> RecommendationResponse:
-        """Создать рекомендацию по ребалансировке для стратегии"""
+        """Создать рекомендацию по ребалансировке для стратегии используя Graph System"""
         try:
             strategy_uuid = uuid.UUID(request.strategy_id)
         except ValueError:
@@ -51,36 +52,57 @@ class RecommendationService:
         if not wallets:
             raise HTTPException(status_code=400, detail="Нет доступных кошельков для стратегии")
         
-        wallet_addresses = [w.address for w in wallets]
+        wallet_addresses = [str(w.address) for w in wallets]
         tokens = set()
         chain = None
         for wallet in wallets:
-            tokens.update(wallet.tokens or [])
+            wallet_tokens = wallet.tokens
+            if wallet_tokens is not None and isinstance(wallet_tokens, list):
+                tokens.update(wallet_tokens)
             if chain is None:
-                chain = wallet.chain
-        
-        # Настраиваем агента
-        agent = get_agent_func()
-        # agent.set_min_profit(strategy.min_profit_threshold_usd)
+                chain = str(wallet.chain)
         
         # Парсим описание стратегии для получения целевого распределения
-        target_allocation = await StrategyService.parse_strategy_description(strategy.description)
+        strategy_description = str(strategy.description)
+        target_allocation = await StrategyService.parse_strategy_description(strategy_description)
         
-        # Получаем рекомендацию
-        logger.info(f"Создание рекомендации для стратегии {strategy.id} (user_id: {user_id})")
-        result = await agent.check_rebalancing(
+        # Преобразуем chain из строки в chain_id
+        chain_id_map = {
+            "ethereum": 1,
+            "polygon": 137,
+            "arbitrum": 42161,
+            "optimism": 10,
+            "bsc": 56
+        }
+        chain_id = chain_id_map.get((chain or "ethereum").lower(), 1)
+        
+        # Получаем min_profit_threshold из стратегии, если есть
+        min_profit_threshold = getattr(strategy, 'min_profit_threshold_usd', 50.0)
+        
+        # Используем Graph System для анализа ребалансировки
+        logger.info(f"Создание рекомендации для стратегии {strategy.id} (user_id: {user_id}) через Graph System")
+        result = await run_rebalancing_analysis(
             wallets=wallet_addresses,
             tokens=list(tokens) if tokens else ["BTC", "ETH", "USDC"],
             target_allocation=target_allocation,
-            chain=chain or "ethereum"
+            chain_id=chain_id,
+            threshold_percent=5.0,
+            min_profit_threshold_usd=min_profit_threshold
         )
+        
+        # Извлекаем рекомендацию из результата графа
+        recommendation_text = result.get("recommendation", "")
+        
+        # Если рекомендация пуста, формируем базовую
+        if not recommendation_text or len(recommendation_text.strip()) == 0:
+            recommendation_text = "Анализ портфеля завершен. Детали доступны в поле analysis."
         
         # Сохраняем рекомендацию в БД
         db_recommendation = Recommendation(
             user_id=user_id,
             strategy_id=strategy.id,
-            recommendation=result.get("recommendation", ""),
-            analysis=result
+            recommendation=recommendation_text,
+            analysis=result  # Сохраняем весь результат анализа
         )
         db.add(db_recommendation)
         db.commit()

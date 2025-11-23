@@ -9,7 +9,6 @@ import uuid
 from app.db import get_db, get_user_id
 from app.api.schemas import RecommendationRequest, RecommendationResponse
 from app.services.recommendation_service import RecommendationService
-from app.services.agent_service import AgentService
 
 router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
 
@@ -22,7 +21,7 @@ async def create_recommendation(
 ):
     """Получить рекомендацию по ребалансировке для стратегии"""
     return await RecommendationService.create_recommendation(
-        db, request, user_id, AgentService.get_agent
+        db, request, user_id, get_agent_func=None  # Graph System используется вместо агента
     )
 
 
